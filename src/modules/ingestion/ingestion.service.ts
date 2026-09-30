@@ -16,7 +16,7 @@ export class IngestionService {
     @InjectModel(ProjectDataRecord) private recordModel: typeof ProjectDataRecord,
     @InjectModel(QuestionnaireSubmission) private questionnaireModel: typeof QuestionnaireSubmission,
     private scorecardCalcService: ScorecardCalcService,
-  ) {}
+  ) { }
 
   async getStagedData(projectId: string): Promise<ExternalDataStaging[]> {
     return this.stagingModel.findAll({
@@ -56,11 +56,11 @@ export class IngestionService {
     const qAnswers: Record<string, any> = questionnaire?.answersPayload || {};
     this.logger.log(`Project ${projectId} questionnaire answers found: ${Object.keys(qAnswers).length} entries.`);
 
-    const censusKey = process.env.CENSUS_API_KEY || '72917264797f5640510d3f404c2a0c456e08382a';
-    const blsKey = process.env.BLS_API_KEY || 'eec404e8ebfc4111b8e4b1a33c566c1f';
-    const epaEmail = process.env.EPA_API_EMAIL || 'kushal.p@shaligram.io';
-    const epaKey = process.env.EPA_API_KEY || 'copperswift27';
-    const arcgisToken = process.env.ARCGIS_API_TOKEN || '';
+    const censusKey = process.env.CENSUS_API_KEY;
+    const blsKey = process.env.BLS_API_KEY;
+    const epaEmail = process.env.EPA_API_EMAIL;
+    const epaKey = process.env.EPA_API_KEY;
+    const arcgisToken = process.env.ARCGIS_API_TOKEN;
 
     const recordsToInsert: Array<{
       projectId: string;

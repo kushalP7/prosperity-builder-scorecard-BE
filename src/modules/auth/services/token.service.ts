@@ -20,14 +20,11 @@ export class TokenService {
   private readonly refreshExpiration: string;
 
   constructor(private readonly configService: ConfigService) {
-    const rawSecret = this.configService.get<string>(
-      'JWT_SECRET',
-      'rose_associates_super_secure_enterprise_key_2026_scorecard_secret!',
-    );
+    const rawSecret = this.configService.get<string>('JWT_SECRET');
     // Derive exactly 256-bit (32 bytes) key for AES-256-GCM encryption
     this.encryptionKey = crypto.createHash('sha256').update(rawSecret).digest();
-    this.accessExpiration = this.configService.get<string>('JWT_ACCESS_EXPIRATION', '15m');
-    this.refreshExpiration = this.configService.get<string>('JWT_REFRESH_EXPIRATION', '7d');
+    this.accessExpiration = this.configService.get<string>('JWT_ACCESS_EXPIRATION');
+    this.refreshExpiration = this.configService.get<string>('JWT_REFRESH_EXPIRATION');
   }
 
   /**

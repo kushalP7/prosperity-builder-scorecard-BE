@@ -5,7 +5,7 @@ import { UserRole } from '../../users/entities/user.entity';
 
 @Injectable()
 export class RolesGuard implements CanActivate {
-  constructor(private readonly reflector: Reflector) {}
+  constructor(private readonly reflector: Reflector) { }
 
   canActivate(context: ExecutionContext): boolean {
     const requiredRoles = this.reflector.getAllAndOverride<UserRole[]>(ROLES_KEY, [
@@ -32,9 +32,7 @@ export class RolesGuard implements CanActivate {
 
     const hasRole = requiredRoles.includes(userRole);
     if (!hasRole) {
-      throw new ForbiddenException(
-        `Access denied: Your role '${userRole}' lacks permission for this action. Required: ${requiredRoles.join(', ')}.`,
-      );
+      throw new ForbiddenException(`Access denied: Your role '${userRole}' lacks permission for this action. Required: ${requiredRoles.join(', ')}.`);
     }
 
     return true;

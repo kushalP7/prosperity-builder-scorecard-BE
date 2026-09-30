@@ -8,7 +8,7 @@ export class JwtAuthGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
     private readonly tokenService: TokenService,
-  ) {}
+  ) { }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
@@ -49,9 +49,7 @@ export class JwtAuthGuard implements CanActivate {
         return true;
       }
       throw new UnauthorizedException(
-        err?.code === 'ERR_JWT_EXPIRED'
-          ? 'Token has expired. Please refresh your session.'
-          : 'Invalid or corrupted authentication token.',
+        err?.code === 'ERR_JWT_EXPIRED' ? 'Token has expired. Please refresh your session.' : 'Invalid or corrupted authentication token.',
       );
     }
   }
