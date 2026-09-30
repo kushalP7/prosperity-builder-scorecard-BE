@@ -8,10 +8,12 @@ import { TemplateSection } from '../templates/entities/template-section.entity';
 import { TemplateCategory } from '../templates/entities/template-category.entity';
 import { TemplateGroup } from '../templates/entities/template-group.entity';
 import { TemplateColumn } from '../templates/entities/template-column.entity';
-import { ConditionalRule } from '../templates/entities/conditional-rule.entity';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
 import { DataUpdateItemDto } from './dto/update-project-data.dto';
+
+import { Inject, forwardRef } from '@nestjs/common';
+import { ScorecardCalcService } from '../engine/scorecard-calc.service';
 
 @Injectable()
 export class ProjectsService {
@@ -20,6 +22,8 @@ export class ProjectsService {
     @InjectModel(ProjectDataRecord) private recordModel: typeof ProjectDataRecord,
     @InjectModel(TemplateSection) private templateSectionModel: typeof TemplateSection,
     private sequelize: Sequelize,
+    @Inject(forwardRef(() => ScorecardCalcService))
+    private scorecardCalcService: ScorecardCalcService,
   ) {}
 
   private formatProject(project: Project): any {
@@ -101,14 +105,12 @@ export class ProjectsService {
                 {
                   model: TemplateColumn,
                   as: 'columns',
-                  include: [{ model: ConditionalRule, as: 'conditionalRules' }],
                 },
               ],
             },
             {
               model: TemplateColumn,
               as: 'columns',
-              include: [{ model: ConditionalRule, as: 'conditionalRules' }],
             },
           ],
         },
@@ -126,8 +128,12 @@ export class ProjectsService {
 
   async updateData(projectId: string, updates: DataUpdateItemDto[]): Promise<void> {
     const transaction = await this.sequelize.transaction();
+    let hasBaseUpdate = false;
     try {
       for (const update of updates) {
+        if (update.columnId === '__base__') {
+          hasBaseUpdate = true;
+        }
         await this.recordModel.upsert(
           {
             projectId,
@@ -145,6 +151,12 @@ export class ProjectsService {
     } catch (error) {
       await transaction.rollback();
       throw error;
+    }
+
+    if (hasBaseUpdate && this.scorecardCalcService) {
+      this.scorecardCalcService.calculateAllRowsForProject(projectId).catch(err => {
+        console.error('Error during automatic scorecard recalculation:', err);
+      });
     }
   }
 

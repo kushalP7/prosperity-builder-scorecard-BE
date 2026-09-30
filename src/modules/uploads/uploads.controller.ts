@@ -4,7 +4,7 @@ import { UploadsService } from './uploads.service';
 import { ApiTags, ApiConsumes, ApiOperation, ApiQuery } from '@nestjs/swagger';
 
 @ApiTags('Uploads')
-@Controller('uploads')
+@Controller(['api/v1/uploads', 'uploads'])
 export class UploadsController {
   constructor(private readonly uploadsService: UploadsService) { }
 

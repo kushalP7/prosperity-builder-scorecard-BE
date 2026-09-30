@@ -5,13 +5,15 @@ import { TemplateSection } from '../templates/entities/template-section.entity';
 import { TemplateCategory } from '../templates/entities/template-category.entity';
 import { TemplateGroup } from '../templates/entities/template-group.entity';
 import { TemplateColumn, ColumnType } from '../templates/entities/template-column.entity';
-import { Project } from '../projects/entities/project.entity';
+import { Project, ProjectStatus } from '../projects/entities/project.entity';
 import { ProjectDataRecord } from '../projects/entities/project-data-record.entity';
-import { AnalyticsWidget, ChartType, WidgetAggregation } from '../analytics/entities/analytics-widget.entity';
 import { AppSettings } from '../settings/entities/app-settings.entity';
 import { RatingBand } from '../settings/entities/rating-band.entity';
 import { User } from '../users/entities/user.entity';
 import { PasswordService } from '../auth/services/password.service';
+import { PaymentMilestone, MilestoneType, PaymentStatus } from '../payments/entities/payment-milestone.entity';
+import { QuestionnaireSubmission, QuestionnaireStatus } from '../intake/entities/questionnaire-submission.entity';
+import { ScorecardRollup } from '../engine/entities/scorecard-rollup.entity';
 
 @Injectable()
 export class SeedService implements OnApplicationBootstrap {
@@ -24,11 +26,13 @@ export class SeedService implements OnApplicationBootstrap {
     @InjectModel(TemplateColumn) private columnModel: typeof TemplateColumn,
     @InjectModel(Project) private projectModel: typeof Project,
     @InjectModel(ProjectDataRecord) private recordModel: typeof ProjectDataRecord,
-    @InjectModel(AnalyticsWidget) private widgetModel: typeof AnalyticsWidget,
     @InjectModel(AppSettings) private settingsModel: typeof AppSettings,
     @InjectModel(RatingBand) private ratingBandModel: typeof RatingBand,
     @InjectModel(User) private userModel: typeof User,
     private readonly passwordService: PasswordService,
+    @InjectModel(PaymentMilestone) private milestoneModel: typeof PaymentMilestone,
+    @InjectModel(QuestionnaireSubmission) private questionnaireModel: typeof QuestionnaireSubmission,
+    @InjectModel(ScorecardRollup) private rollupModel: typeof ScorecardRollup,
     private sequelize: Sequelize,
   ) {}
 
@@ -209,9 +213,6 @@ export class SeedService implements OnApplicationBootstrap {
 
     const sectionEntities: any[] = [];
     const sampleRecords: Array<{ nodeId: string; columnId: string; value: any; source?: string; notes?: string }> = [];
-
-    const widgetsToInsert: any[] = [];
-    const chartTypes: any[] = [ChartType.BAR_CHART, ChartType.PIE_CHART, ChartType.AREA_CHART, ChartType.DONUT_CHART, ChartType.RADAR_CHART, ChartType.LINE_CHART];
 
     let sectionIndex = 1;
     for (const name of sectionNames) {
@@ -519,41 +520,16 @@ export class SeedService implements OnApplicationBootstrap {
       };
       sectionEntities.push(secJson);
 
-      // Generate EXACT 3 Widgets per Section matching seed.ts (No extra widgets!)
-      const firstCategory = categories[0];
-      if (firstCategory && firstCategory.columns.length >= 4) {
-        const w1 = await this.widgetModel.create(
-          { title: `${name} Score`, description: `${name} average score`, chartType: ChartType.STAT_CARD, sectionId: section.id, categoryId: null, columnId: firstCategory.columns[3].id, aggregation: WidgetAggregation.AVERAGE },
-          { transaction }
-        );
-
-        const type1 = chartTypes[(sectionIndex - 1) % chartTypes.length];
-        const w2 = await this.widgetModel.create(
-          { title: `${name} Value Overview`, description: `${name} value overview`, chartType: type1, sectionId: section.id, categoryId: null, columnId: firstCategory.columns[2].id, aggregation: WidgetAggregation.SUM },
-          { transaction }
-        );
-
-        const type2 = chartTypes[((sectionIndex - 1) + 2) % chartTypes.length];
-        const w3 = await this.widgetModel.create(
-          { title: `${name} Score Breakdown`, description: `${name} score breakdown`, chartType: type2, sectionId: section.id, categoryId: null, columnId: firstCategory.columns[3].id, aggregation: WidgetAggregation.SUM },
-          { transaction }
-        );
-
-        widgetsToInsert.push(w1, w2, w3);
-      }
-
       sectionIndex++;
     }
 
-    const allWidgetIds = widgetsToInsert.map((w) => w.id);
-
     const initialProjectsPool = [
-      { name: "Metropolis Master Plan 2026", clientName: "City of Metropolis Planning Dept", year: 2026, image: "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=800&auto=format&fit=crop&q=60" },
-      { name: "Hudson Yards Vision 2026", clientName: "NYC Economic Development Corp", year: 2026, image: "https://images.unsplash.com/photo-1519501025264-65ba15a82390?w=800&auto=format&fit=crop&q=60" },
-      { name: "Riverside Gateway Plan 2026", clientName: "Riverside Development Authority", year: 2026, image: "https://images.unsplash.com/photo-1477959858617-67f30ac4ce78?w=800&auto=format&fit=crop&q=60" },
-      { name: "Midtown Tech District 2026", clientName: "Midtown Commerce Alliance", year: 2026, image: "https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?w=800&auto=format&fit=crop&q=60" },
-      { name: "Harbor View Revitalization 2026", clientName: "Harbor Port Authority", year: 2026, image: "https://images.unsplash.com/photo-1513694203232-719a280e022f?w=800&auto=format&fit=crop&q=60" },
-      { name: "Beacon Hill Urban Core 2026", clientName: "Boston Urban Planning Board", year: 2026, image: "https://images.unsplash.com/photo-1514565131-fce0801e5785?w=800&auto=format&fit=crop&q=60" }
+      { name: "Metropolis Master Plan 2026", clientName: "City of Metropolis Planning Dept", year: 2026, status: ProjectStatus.PUBLISHED, image: "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=800&auto=format&fit=crop&q=60" },
+      { name: "Hudson Yards Vision 2026", clientName: "NYC Economic Development Corp", year: 2026, status: ProjectStatus.IN_REVIEW, image: "https://images.unsplash.com/photo-1519501025264-65ba15a82390?w=800&auto=format&fit=crop&q=60" },
+      { name: "Riverside Gateway Plan 2026", clientName: "Riverside Development Authority", year: 2026, status: ProjectStatus.CALCULATED, image: "https://images.unsplash.com/photo-1477959858617-67f30ac4ce78?w=800&auto=format&fit=crop&q=60" },
+      { name: "Midtown Tech District 2026", clientName: "Midtown Commerce Alliance", year: 2026, status: ProjectStatus.INGESTION_RUNNING, image: "https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?w=800&auto=format&fit=crop&q=60" },
+      { name: "Harbor View Revitalization 2026", clientName: "Harbor Port Authority", year: 2026, status: ProjectStatus.INTAKE_PENDING, image: "https://images.unsplash.com/photo-1513694203232-719a280e022f?w=800&auto=format&fit=crop&q=60" },
+      { name: "Beacon Hill Urban Core 2026", clientName: "Boston Urban Planning Board", year: 2026, status: ProjectStatus.PUBLISHED, image: "https://images.unsplash.com/photo-1514565131-fce0801e5785?w=800&auto=format&fit=crop&q=60" }
     ];
 
     for (let pIdx = 0; pIdx < initialProjectsPool.length; pIdx++) {
@@ -563,12 +539,92 @@ export class SeedService implements OnApplicationBootstrap {
           name: proj.name,
           clientName: proj.clientName,
           year: proj.year,
+          status: proj.status,
           image: proj.image,
           assignedSections: sectionEntities,
-          enabledWidgets: allWidgetIds,
+          enabledWidgets: [],
+          bypassPayments: true,
+          totalProjectValue: 5000.00,
         },
         { transaction },
       );
+
+      // Seed 3-tier milestone payments with current bypass
+      await this.milestoneModel.bulkCreate([
+        {
+          projectId: createdProject.id,
+          milestoneType: MilestoneType.INITIAL_40,
+          amountDue: 2000.00,
+          percentage: 40,
+          status: PaymentStatus.BYPASSED,
+          paymentMethod: 'ACH Direct Debit (Stripe/HubSpot)',
+          provider: 'MANUAL',
+          transactionReference: `INIT-${createdProject.id.slice(0, 6)}`,
+          clearedAt: new Date(),
+        },
+        {
+          projectId: createdProject.id,
+          milestoneType: MilestoneType.MID_30,
+          amountDue: 1500.00,
+          percentage: 30,
+          status: proj.status === ProjectStatus.INTAKE_PENDING ? PaymentStatus.PENDING : PaymentStatus.BYPASSED,
+          paymentMethod: 'ACH Direct Debit (Stripe/HubSpot)',
+          provider: 'MANUAL',
+          clearedAt: proj.status === ProjectStatus.INTAKE_PENDING ? null : new Date(),
+        },
+        {
+          projectId: createdProject.id,
+          milestoneType: MilestoneType.FINAL_30,
+          amountDue: 1500.00,
+          percentage: 30,
+          status: proj.status === ProjectStatus.PUBLISHED ? PaymentStatus.BYPASSED : PaymentStatus.PENDING,
+          paymentMethod: 'ACH Direct Debit (Stripe/HubSpot)',
+          provider: 'MANUAL',
+          clearedAt: proj.status === ProjectStatus.PUBLISHED ? new Date() : null,
+        },
+      ], { transaction });
+
+      // Seed questionnaire
+      await this.questionnaireModel.create({
+        projectId: createdProject.id,
+        status: proj.status === ProjectStatus.INTAKE_PENDING ? QuestionnaireStatus.DRAFT : QuestionnaireStatus.SUBMITTED,
+        completedPointsCount: proj.status === ProjectStatus.INTAKE_PENDING ? 24 : 92,
+        totalPointsCount: 92,
+        answersPayload: {
+          transit_airport_count: { value: 2 },
+          transit_city_bus_count: { value: 6 },
+          safety_municipal_officers_count: { value: 45 },
+          edu_comm_college_count: { value: 1 },
+          labor_fortune_500_hq: { value: false },
+        },
+        submittedAt: proj.status === ProjectStatus.INTAKE_PENDING ? null : new Date(),
+      }, { transaction });
+
+      // Seed scorecard rollup matching Speedometer Master bands
+      const categoryScores = sectionNames.map((sName, sIdx) => {
+        const scoreTenScale = Number((5.8 + ((sIdx * 0.45) % 3.4)).toFixed(1));
+        return {
+          categoryKey: sName.toLowerCase().replace(/[^a-z0-9]+/g, '_'),
+          categoryLabel: sName,
+          totalClientPoints: Math.round(scoreTenScale * 6.5),
+          totalMaxPoints: 65,
+          scorePercentage: Number((scoreTenScale * 10).toFixed(1)),
+          scoreTenScale,
+          rank: sIdx + 1,
+          metricsCount: 6,
+        };
+      });
+
+      const avgTenScale = Number((categoryScores.reduce((s, c) => s + c.scoreTenScale, 0) / 12).toFixed(1));
+      await this.rollupModel.create({
+        projectId: createdProject.id,
+        overallScoreTenScale: avgTenScale,
+        overallScorePercentage: Number((avgTenScale * 10).toFixed(1)),
+        performanceBand: avgTenScale > 7.0 ? 'Good' : 'Average',
+        categoryScores,
+        isCalibrated: proj.status === ProjectStatus.PUBLISHED,
+        calibrationNotes: proj.status === ProjectStatus.PUBLISHED ? 'Calibrated by Lead Analyst Kathleen Rose' : null,
+      }, { transaction });
 
       // Bulk create realistic data records with slight variations per project
       const projectRecords = sampleRecords.map((r) => {
@@ -665,8 +721,6 @@ export class SeedService implements OnApplicationBootstrap {
       transaction,
     });
 
-    const widgets = await this.widgetModel.findAll({ transaction });
-    const widgetIds = widgets.map((w) => w.id);
     const sectionEntities = sections.map((s) => JSON.parse(JSON.stringify(s.toJSON())));
 
     const sampleProject = await this.projectModel.create(
@@ -674,9 +728,12 @@ export class SeedService implements OnApplicationBootstrap {
         name: selectedProject.name,
         clientName: selectedProject.clientName,
         year: selectedProject.year,
+        status: ProjectStatus.INTAKE_PENDING,
         image: selectedProject.image,
         assignedSections: sectionEntities,
-        enabledWidgets: widgetIds,
+        enabledWidgets: [],
+        bypassPayments: true,
+        totalProjectValue: 5000.00,
       },
       { transaction },
     );

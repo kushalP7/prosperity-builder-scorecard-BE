@@ -6,9 +6,13 @@ import { TemplateSection } from '../templates/entities/template-section.entity';
 import { ProjectsService } from './projects.service';
 import { ProjectsController } from './projects.controller';
 
+import { forwardRef } from '@nestjs/common';
+import { EngineModule } from '../engine/engine.module';
+
 @Module({
   imports: [
     SequelizeModule.forFeature([Project, ProjectDataRecord, TemplateSection]),
+    forwardRef(() => EngineModule),
   ],
   controllers: [ProjectsController],
   providers: [ProjectsService],

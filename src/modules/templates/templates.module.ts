@@ -4,7 +4,6 @@ import { TemplateSection } from './entities/template-section.entity';
 import { TemplateCategory } from './entities/template-category.entity';
 import { TemplateGroup } from './entities/template-group.entity';
 import { TemplateColumn } from './entities/template-column.entity';
-import { ConditionalRule } from './entities/conditional-rule.entity';
 import { TemplatesService } from './templates.service';
 import { TemplatesController } from './templates.controller';
 
@@ -15,7 +14,6 @@ import { TemplatesController } from './templates.controller';
       TemplateCategory,
       TemplateGroup,
       TemplateColumn,
-      ConditionalRule,
     ]),
   ],
   controllers: [TemplatesController],

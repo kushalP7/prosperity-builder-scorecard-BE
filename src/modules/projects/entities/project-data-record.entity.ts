@@ -4,7 +4,7 @@ import { Project } from './project.entity';
 @Table({ 
   tableName: 'ProjectDataRecords', 
   timestamps: true,
-  indexes: [{ unique: true, fields: ['projectId', 'nodeId', 'columnId'] }]
+  indexes: [{ name: 'idx_pdr_project_node_column', unique: true, fields: ['projectId', 'nodeId', 'columnId'] }]
 })
 export class ProjectDataRecord extends Model {
   @Column({ type: DataType.UUID, defaultValue: DataType.UUIDV4, primaryKey: true })

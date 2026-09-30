@@ -1,9 +1,25 @@
 import { Injectable } from '@nestjs/common';
-import { ConditionalRule, RuleOperator } from '../templates/entities/conditional-rule.entity';
+
+export enum RuleOperator {
+  EQUALS = 'equals',
+  NOT_EQUALS = 'not_equals',
+  GREATER_THAN = 'greater_than',
+  LESS_THAN = 'less_than',
+  GREATER_THAN_OR_EQUALS = 'greater_than_or_equals',
+  LESS_THAN_OR_EQUALS = 'less_than_or_equals',
+  BETWEEN = 'between',
+}
+
+export interface RuleDefinition {
+  ifColumnId: string;
+  operator: RuleOperator;
+  conditionValue: any;
+  resultValue: any;
+}
 
 @Injectable()
 export class ConditionalRuleEngine {
-  evaluateRules(rules: ConditionalRule[], rowData: Record<string, any>): any | undefined {
+  evaluateRules(rules: RuleDefinition[], rowData: Record<string, any>): any | undefined {
     if (!rules || rules.length === 0) return undefined;
 
     for (const rule of rules) {

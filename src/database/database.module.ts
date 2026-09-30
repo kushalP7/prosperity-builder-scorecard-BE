@@ -8,13 +8,16 @@ import { TemplateSection } from '../modules/templates/entities/template-section.
 import { TemplateCategory } from '../modules/templates/entities/template-category.entity';
 import { TemplateGroup } from '../modules/templates/entities/template-group.entity';
 import { TemplateColumn } from '../modules/templates/entities/template-column.entity';
-import { ConditionalRule } from '../modules/templates/entities/conditional-rule.entity';
 import { Project } from '../modules/projects/entities/project.entity';
 import { ProjectDataRecord } from '../modules/projects/entities/project-data-record.entity';
-import { AnalyticsWidget } from '../modules/analytics/entities/analytics-widget.entity';
+import { PaymentMilestone } from '../modules/payments/entities/payment-milestone.entity';
+import { QuestionnaireSubmission } from '../modules/intake/entities/questionnaire-submission.entity';
+import { ExternalDataStaging } from '../modules/ingestion/entities/external-data-staging.entity';
+import { ScorecardRollup } from '../modules/engine/entities/scorecard-rollup.entity';
 import { LandingReport } from '../modules/landing-cms/entities/landing-report.entity';
 import { LandingProject } from '../modules/landing-cms/entities/landing-project.entity';
 import { LandingMedia } from '../modules/landing-cms/entities/landing-media.entity';
+import { AnalyticsWidget } from '../modules/analytics/entities/analytics-widget.entity';
 import { User } from '../modules/users/entities/user.entity';
 
 @Module({
@@ -37,13 +40,16 @@ import { User } from '../modules/users/entities/user.entity';
           TemplateCategory,
           TemplateGroup,
           TemplateColumn,
-          ConditionalRule,
           Project,
           ProjectDataRecord,
-          AnalyticsWidget,
+          PaymentMilestone,
+          QuestionnaireSubmission,
+          ExternalDataStaging,
+          ScorecardRollup,
           LandingReport,
           LandingProject,
           LandingMedia,
+          AnalyticsWidget,
         ],
         autoLoadModels: true,
         synchronize: true, // Sync database schema automatically in dev mode

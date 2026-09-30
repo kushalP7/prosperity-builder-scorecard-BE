@@ -1,7 +1,6 @@
 import { Table, Column, Model, DataType, ForeignKey, BelongsTo, HasMany } from 'sequelize-typescript';
 import { TemplateCategory } from './template-category.entity';
 import { TemplateGroup } from './template-group.entity';
-import { ConditionalRule } from './conditional-rule.entity';
 
 export enum ColumnType {
   NUMBER = 'number',
@@ -62,7 +61,4 @@ export class TemplateColumn extends Model {
 
   @Column({ type: DataType.JSONB, allowNull: false })
   scoringRule: any; // Discriminated union rule object
-
-  @HasMany(() => ConditionalRule, { onDelete: 'CASCADE' })
-  conditionalRules: ConditionalRule[];
 }

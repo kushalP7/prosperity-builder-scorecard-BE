@@ -6,11 +6,14 @@ import { TemplateGroup } from '../templates/entities/template-group.entity';
 import { TemplateColumn } from '../templates/entities/template-column.entity';
 import { Project } from '../projects/entities/project.entity';
 import { ProjectDataRecord } from '../projects/entities/project-data-record.entity';
-import { AnalyticsWidget } from '../analytics/entities/analytics-widget.entity';
 import { AppSettings } from '../settings/entities/app-settings.entity';
 import { RatingBand } from '../settings/entities/rating-band.entity';
 import { User } from '../users/entities/user.entity';
 import { AuthModule } from '../auth/auth.module';
+import { PaymentMilestone } from '../payments/entities/payment-milestone.entity';
+import { QuestionnaireSubmission } from '../intake/entities/questionnaire-submission.entity';
+import { ExternalDataStaging } from '../ingestion/entities/external-data-staging.entity';
+import { ScorecardRollup } from '../engine/entities/scorecard-rollup.entity';
 import { SeedService } from './seed.service';
 import { SeedController } from './seed.controller';
 
@@ -23,10 +26,13 @@ import { SeedController } from './seed.controller';
       TemplateColumn,
       Project,
       ProjectDataRecord,
-      AnalyticsWidget,
       AppSettings,
       RatingBand,
       User,
+      PaymentMilestone,
+      QuestionnaireSubmission,
+      ExternalDataStaging,
+      ScorecardRollup,
     ]),
     AuthModule,
   ],

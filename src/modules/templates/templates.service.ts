@@ -4,7 +4,6 @@ import { TemplateSection } from './entities/template-section.entity';
 import { TemplateCategory } from './entities/template-category.entity';
 import { TemplateGroup } from './entities/template-group.entity';
 import { TemplateColumn } from './entities/template-column.entity';
-import { ConditionalRule } from './entities/conditional-rule.entity';
 
 @Injectable()
 export class TemplatesService {
@@ -13,7 +12,6 @@ export class TemplatesService {
     @InjectModel(TemplateCategory) private categoryModel: typeof TemplateCategory,
     @InjectModel(TemplateGroup) private groupModel: typeof TemplateGroup,
     @InjectModel(TemplateColumn) private columnModel: typeof TemplateColumn,
-    @InjectModel(ConditionalRule) private ruleModel: typeof ConditionalRule,
   ) {}
 
   async findAllTemplates(): Promise<TemplateSection[]> {
@@ -30,14 +28,12 @@ export class TemplatesService {
                 {
                   model: TemplateColumn,
                   as: 'columns',
-                  include: [{ model: ConditionalRule, as: 'conditionalRules' }],
                 },
               ],
             },
             {
               model: TemplateColumn,
               as: 'columns',
-              include: [{ model: ConditionalRule, as: 'conditionalRules' }],
             },
           ],
         },
@@ -70,18 +66,7 @@ export class TemplatesService {
       groupId: groupId || null,
     });
 
-    if (conditionalRules && conditionalRules.length > 0) {
-      await this.ruleModel.bulkCreate(
-        conditionalRules.map((r: any) => ({
-          ...r,
-          columnId: column.id,
-        })),
-      );
-    }
-
-    return this.columnModel.findByPk(column.id, {
-      include: [{ model: ConditionalRule, as: 'conditionalRules' }],
-    });
+    return this.columnModel.findByPk(column.id);
   }
 
   async deleteSection(id: string): Promise<void> {

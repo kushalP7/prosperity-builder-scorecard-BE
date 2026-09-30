@@ -1,40 +1,42 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/sequelize';
-import { AnalyticsWidget } from './entities/analytics-widget.entity';
 import { Project } from '../projects/entities/project.entity';
+import { AnalyticsWidget } from './entities/analytics-widget.entity';
 import { CreateWidgetDto } from './dto/create-widget.dto';
 
 @Injectable()
 export class AnalyticsService {
   constructor(
-    @InjectModel(AnalyticsWidget) private widgetModel: typeof AnalyticsWidget,
     @InjectModel(Project) private projectModel: typeof Project,
+    @InjectModel(AnalyticsWidget) private widgetModel: typeof AnalyticsWidget,
   ) {}
 
-  async findAllWidgets(): Promise<AnalyticsWidget[]> {
-    return this.widgetModel.findAll({ order: [['createdAt', 'DESC']] });
+  async findAllWidgets(): Promise<any[]> {
+    return this.widgetModel.findAll({
+      order: [['createdAt', 'ASC']],
+    });
   }
 
-  async createWidget(dto: CreateWidgetDto): Promise<AnalyticsWidget> {
+  async createWidget(dto: CreateWidgetDto): Promise<any> {
     return this.widgetModel.create(dto as any);
   }
 
-  async updateWidget(id: string, dto: Partial<CreateWidgetDto>): Promise<AnalyticsWidget> {
+  async updateWidget(id: string, dto: Partial<CreateWidgetDto>): Promise<any> {
     const widget = await this.widgetModel.findByPk(id);
     if (!widget) throw new NotFoundException(`Widget ${id} not found`);
-    await widget.update(dto);
-    return widget;
+    return widget.update(dto as any);
   }
 
   async deleteWidget(id: string): Promise<void> {
     const widget = await this.widgetModel.findByPk(id);
-    if (widget) await widget.destroy();
+    if (widget) {
+      await widget.destroy();
+    }
   }
 
-  async evaluateProjectWidget(projectId: string, widgetId: string) {
-    const widget = await this.widgetModel.findByPk(widgetId);
+  async evaluateProjectWidget(projectId: string, widgetId?: string) {
     const project = await this.projectModel.findByPk(projectId, { include: ['records'] });
-    if (!widget || !project) return [];
+    if (!project) return [];
 
     // Map records by nodeId and columnId
     const recordsMap: Record<string, Record<string, any>> = {};
@@ -44,7 +46,7 @@ export class AnalyticsService {
     }
 
     const dataPoints: Array<{ name: string; value: number }> = [];
-    const colId = widget.columnId || '__base__';
+    const colId = '__base__';
 
     for (const section of project.assignedSections || []) {
       let sectionTotal = 0;
@@ -52,20 +54,8 @@ export class AnalyticsService {
 
       for (const category of section.categories || []) {
         const groups = category.groups?.length > 0 ? category.groups : [category];
-        const firstCategory = section.categories?.[0];
-
         for (const group of groups) {
-          let val = recordsMap[group.id]?.[colId]?.value;
-          if (val === undefined && colId && firstCategory) {
-            const targetColName = firstCategory.columns?.find((c: any) => c.id === colId)?.name;
-            if (targetColName) {
-              const catCol = category.columns?.find((c: any) => c.name === targetColName);
-              if (catCol) {
-                val = recordsMap[group.id]?.[catCol.id]?.value;
-              }
-            }
-          }
-
+          const val = recordsMap[group.id]?.[colId]?.value;
           if (typeof val === 'number') {
             sectionTotal += val;
             count++;
@@ -73,10 +63,7 @@ export class AnalyticsService {
         }
       }
 
-      let finalValue = 0;
-      if (widget.aggregation === 'sum') finalValue = sectionTotal;
-      else if (widget.aggregation === 'average' && count > 0) finalValue = sectionTotal / count;
-
+      const finalValue = count > 0 ? sectionTotal / count : 0;
       dataPoints.push({
         name: section.label,
         value: Number(finalValue.toFixed(2)),

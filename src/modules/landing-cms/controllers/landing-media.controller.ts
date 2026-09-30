@@ -4,8 +4,8 @@ import { LandingMediaService } from '../services/landing-media.service';
 import { CreateLandingMediaDto } from '../dto/create-landing-media.dto';
 import { UpdateLandingMediaDto } from '../dto/update-landing-media.dto';
 
-@ApiTags('Landing CMS Media Sphere')
-@Controller('landing-cms/media')
+@ApiTags('Landing CMS Media')
+@Controller(['api/v1/landing-cms/media', 'landing-cms/media'])
 export class LandingMediaController {
   constructor(private readonly mediaService: LandingMediaService) { }
 

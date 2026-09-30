@@ -4,6 +4,9 @@ import { DatabaseModule } from './database/database.module';
 import { SettingsModule } from './modules/settings/settings.module';
 import { TemplatesModule } from './modules/templates/templates.module';
 import { ProjectsModule } from './modules/projects/projects.module';
+import { PaymentsModule } from './modules/payments/payments.module';
+import { IntakeModule } from './modules/intake/intake.module';
+import { IngestionModule } from './modules/ingestion/ingestion.module';
 import { EngineModule } from './modules/engine/engine.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { SeedModule } from './modules/seed/seed.module';
@@ -24,6 +27,9 @@ import { UsersModule } from './modules/users/users.module';
     SettingsModule,
     TemplatesModule,
     ProjectsModule,
+    PaymentsModule,
+    IntakeModule,
+    IngestionModule,
     EngineModule,
     AnalyticsModule,
     SeedModule,

@@ -5,7 +5,7 @@ import { CreateLandingReportDto } from '../dto/create-landing-report.dto';
 import { UpdateLandingReportDto } from '../dto/update-landing-report.dto';
 
 @ApiTags('Landing CMS Reports')
-@Controller('landing-cms/reports')
+@Controller(['api/v1/landing-cms/reports', 'landing-cms/reports'])
 export class LandingReportsController {
   constructor(private readonly reportsService: LandingReportsService) { }
 

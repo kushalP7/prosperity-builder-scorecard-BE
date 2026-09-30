@@ -5,7 +5,7 @@ import { CreateLandingProjectDto } from '../dto/create-landing-project.dto';
 import { UpdateLandingProjectDto } from '../dto/update-landing-project.dto';
 
 @ApiTags('Landing CMS Projects')
-@Controller('landing-cms/projects')
+@Controller(['api/v1/landing-cms/projects', 'landing-cms/projects'])
 export class LandingProjectsController {
   constructor(private readonly projectsService: LandingProjectsService) {}
 
