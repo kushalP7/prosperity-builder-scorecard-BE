@@ -1,7 +1,7 @@
 import { Table, Column, Model, DataType, HasMany } from 'sequelize-typescript';
 import { ProjectDataRecord } from './project-data-record.entity';
 
-@Table({ tableName: 'projects', timestamps: true })
+@Table({ tableName: 'Projects', timestamps: true })
 export class Project extends Model {
   @Column({ type: DataType.UUID, defaultValue: DataType.UUIDV4, primaryKey: true })
   id: string;

@@ -2,7 +2,7 @@ import { Table, Column, Model, DataType, ForeignKey, BelongsTo, HasMany } from '
 import { TemplateCategory } from './template-category.entity';
 import { TemplateColumn } from './template-column.entity';
 
-@Table({ tableName: 'template_groups', timestamps: true })
+@Table({ tableName: 'TemplateGroups', timestamps: true })
 export class TemplateGroup extends Model {
   @Column({ type: DataType.UUID, defaultValue: DataType.UUIDV4, primaryKey: true })
   id: string;

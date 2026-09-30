@@ -1,7 +1,7 @@
 import { Table, Column, Model, DataType, HasMany } from 'sequelize-typescript';
 import { RatingBand } from './rating-band.entity';
 
-@Table({ tableName: 'app_settings', timestamps: true })
+@Table({ tableName: 'AppSettings', timestamps: true })
 export class AppSettings extends Model {
   @Column({ type: DataType.UUID, defaultValue: DataType.UUIDV4, primaryKey: true })
   id: string;

@@ -14,6 +14,8 @@ import { ProjectDataRecord } from '../modules/projects/entities/project-data-rec
 import { AnalyticsWidget } from '../modules/analytics/entities/analytics-widget.entity';
 import { LandingReport } from '../modules/landing-cms/entities/landing-report.entity';
 import { LandingProject } from '../modules/landing-cms/entities/landing-project.entity';
+import { LandingMedia } from '../modules/landing-cms/entities/landing-media.entity';
+import { User } from '../modules/users/entities/user.entity';
 
 @Module({
   imports: [
@@ -28,6 +30,7 @@ import { LandingProject } from '../modules/landing-cms/entities/landing-project.
         password: configService.get<string>('DB_PASSWORD', 'postgres'),
         database: configService.get<string>('DB_DATABASE', 'rose_associates_scorecard'),
         models: [
+          User,
           AppSettings,
           RatingBand,
           TemplateSection,
@@ -40,6 +43,7 @@ import { LandingProject } from '../modules/landing-cms/entities/landing-project.
           AnalyticsWidget,
           LandingReport,
           LandingProject,
+          LandingMedia,
         ],
         autoLoadModels: true,
         synchronize: true, // Sync database schema automatically in dev mode

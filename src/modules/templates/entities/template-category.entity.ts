@@ -3,7 +3,7 @@ import { TemplateSection } from './template-section.entity';
 import { TemplateGroup } from './template-group.entity';
 import { TemplateColumn } from './template-column.entity';
 
-@Table({ tableName: 'template_categories', timestamps: true })
+@Table({ tableName: 'TemplateCategories', timestamps: true })
 export class TemplateCategory extends Model {
   @Column({ type: DataType.UUID, defaultValue: DataType.UUIDV4, primaryKey: true })
   id: string;

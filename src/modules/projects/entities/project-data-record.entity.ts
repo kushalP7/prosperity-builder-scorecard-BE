@@ -2,7 +2,7 @@ import { Table, Column, Model, DataType, ForeignKey, BelongsTo } from 'sequelize
 import { Project } from './project.entity';
 
 @Table({ 
-  tableName: 'project_data_records', 
+  tableName: 'ProjectDataRecords', 
   timestamps: true,
   indexes: [{ unique: true, fields: ['projectId', 'nodeId', 'columnId'] }]
 })

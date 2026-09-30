@@ -11,7 +11,7 @@ export enum RuleOperator {
   BETWEEN = 'between',
 }
 
-@Table({ tableName: 'conditional_rules', timestamps: false })
+@Table({ tableName: 'ConditionalRules', timestamps: false })
 export class ConditionalRule extends Model {
   @Column({ type: DataType.UUID, defaultValue: DataType.UUIDV4, primaryKey: true })
   id: string;

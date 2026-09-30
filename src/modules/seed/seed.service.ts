@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
 import { InjectModel } from '@nestjs/sequelize';
 import { Sequelize } from 'sequelize-typescript';
 import { TemplateSection } from '../templates/entities/template-section.entity';
@@ -10,9 +10,11 @@ import { ProjectDataRecord } from '../projects/entities/project-data-record.enti
 import { AnalyticsWidget, ChartType, WidgetAggregation } from '../analytics/entities/analytics-widget.entity';
 import { AppSettings } from '../settings/entities/app-settings.entity';
 import { RatingBand } from '../settings/entities/rating-band.entity';
+import { User } from '../users/entities/user.entity';
+import { PasswordService } from '../auth/services/password.service';
 
 @Injectable()
-export class SeedService {
+export class SeedService implements OnApplicationBootstrap {
   private readonly logger = new Logger(SeedService.name);
 
   constructor(
@@ -25,10 +27,104 @@ export class SeedService {
     @InjectModel(AnalyticsWidget) private widgetModel: typeof AnalyticsWidget,
     @InjectModel(AppSettings) private settingsModel: typeof AppSettings,
     @InjectModel(RatingBand) private ratingBandModel: typeof RatingBand,
+    @InjectModel(User) private userModel: typeof User,
+    private readonly passwordService: PasswordService,
     private sequelize: Sequelize,
   ) {}
 
+  async onApplicationBootstrap(): Promise<void> {
+    await this.seedUsers();
+  }
+
+  async seedUsers(): Promise<void> {
+    try {
+      this.logger.log('Syncing and migrating RBAC user accounts with Argon2 hashes...');
+
+      // Ensure Users.role column is VARCHAR(50) in PostgreSQL
+      try {
+        await this.sequelize.query('ALTER TABLE IF EXISTS "Users" ALTER COLUMN role TYPE VARCHAR(50) USING role::text');
+      } catch {
+        // Ignored if already VARCHAR(50) or table doesn't exist yet
+      }
+      try {
+        await this.sequelize.query('ALTER TABLE IF EXISTS "users" ALTER COLUMN role TYPE VARCHAR(50) USING role::text');
+      } catch {
+        // Ignored if already VARCHAR(50)
+      }
+
+      // Auto-migrate any legacy role strings in PostgreSQL database
+      await this.userModel.update({ role: 'super_admin' }, { where: { role: 'admin' } });
+      await this.userModel.update({ role: 'project_lead' }, { where: { role: 'manager' } });
+      await this.userModel.update({ role: 'assessment_specialist' }, { where: { role: 'analyst' } });
+      await this.userModel.update({ role: 'client_viewer' }, { where: { role: 'viewer' } });
+
+      const defaultUsers = [
+        {
+          name: 'Alexander Rose',
+          email: 'admin@roseassociates.com',
+          password: 'admin123',
+          role: 'super_admin' as const,
+          department: 'Executive Board',
+          status: 'active' as const,
+          avatarBg: 'bg-[#7c0d15] text-white',
+        },
+        {
+          name: 'Samantha Vance',
+          email: 'svance@roseassociates.com',
+          password: 'manager123',
+          role: 'project_lead' as const,
+          department: 'Real Estate Development',
+          status: 'active' as const,
+          avatarBg: 'bg-blue-600 text-white',
+        },
+        {
+          name: 'Marcus Chen',
+          email: 'mchen@roseassociates.com',
+          password: 'analyst123',
+          role: 'assessment_specialist' as const,
+          department: 'Urban Analytics',
+          status: 'active' as const,
+          avatarBg: 'bg-emerald-600 text-white',
+        },
+        {
+          name: 'Elena Rodriguez',
+          email: 'erodriguez@roseassociates.com',
+          password: 'viewer123',
+          role: 'client_viewer' as const,
+          department: 'Public Affairs',
+          status: 'active' as const,
+          avatarBg: 'bg-slate-700 text-white',
+        },
+      ];
+
+      // Upsert/migrate users to new domain roles
+      for (const u of defaultUsers) {
+        const existing = await this.userModel.findOne({ where: { email: u.email } });
+        if (existing) {
+          await existing.update({ role: u.role, name: u.name, department: u.department });
+        } else {
+          const hashedPassword = await this.passwordService.hash(u.password);
+          await this.userModel.create({
+            name: u.name,
+            email: u.email,
+            password: hashedPassword,
+            role: u.role,
+            department: u.department,
+            status: u.status,
+            avatarBg: u.avatarBg,
+            lastActive: new Date(),
+          });
+        }
+      }
+
+      this.logger.log('✅ Successfully synced domain roles: super_admin, project_lead, assessment_specialist, client_viewer.');
+    } catch (err: any) {
+      this.logger.error(`Error seeding users: ${err.message}`);
+    }
+  }
+
   async populateSampleData(): Promise<void> {
+    await this.seedUsers();
     const existingProjectCount = await this.projectModel.count();
     if (existingProjectCount > 0) {
       this.logger.log('Sample data already exists, skipping seed.');

@@ -9,6 +9,8 @@ import { ProjectDataRecord } from '../projects/entities/project-data-record.enti
 import { AnalyticsWidget } from '../analytics/entities/analytics-widget.entity';
 import { AppSettings } from '../settings/entities/app-settings.entity';
 import { RatingBand } from '../settings/entities/rating-band.entity';
+import { User } from '../users/entities/user.entity';
+import { AuthModule } from '../auth/auth.module';
 import { SeedService } from './seed.service';
 import { SeedController } from './seed.controller';
 
@@ -24,7 +26,9 @@ import { SeedController } from './seed.controller';
       AnalyticsWidget,
       AppSettings,
       RatingBand,
+      User,
     ]),
+    AuthModule,
   ],
   controllers: [SeedController],
   providers: [SeedService],

@@ -11,7 +11,7 @@ export enum ColumnType {
   SELECT = 'select',
 }
 
-@Table({ tableName: 'template_columns', timestamps: true })
+@Table({ tableName: 'TemplateColumns', timestamps: true })
 export class TemplateColumn extends Model {
   @Column({ type: DataType.UUID, defaultValue: DataType.UUIDV4, primaryKey: true })
   id: string;

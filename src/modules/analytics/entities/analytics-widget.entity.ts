@@ -18,7 +18,7 @@ export enum WidgetAggregation {
   FORMULA = 'formula',
 }
 
-@Table({ tableName: 'analytics_widgets', timestamps: true })
+@Table({ tableName: 'AnalyticsWidgets', timestamps: true })
 export class AnalyticsWidget extends Model {
   @Column({ type: DataType.UUID, defaultValue: DataType.UUIDV4, primaryKey: true })
   id: string;

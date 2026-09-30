@@ -1,7 +1,7 @@
 import { Table, Column, Model, DataType, ForeignKey, BelongsTo } from 'sequelize-typescript';
 import { AppSettings } from './app-settings.entity';
 
-@Table({ tableName: 'rating_bands', timestamps: true })
+@Table({ tableName: 'RatingBands', timestamps: true })
 export class RatingBand extends Model {
   @Column({ type: DataType.UUID, defaultValue: DataType.UUIDV4, primaryKey: true })
   id: string;

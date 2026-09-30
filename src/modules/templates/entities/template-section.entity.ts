@@ -1,7 +1,7 @@
 import { Table, Column, Model, DataType, HasMany } from 'sequelize-typescript';
 import { TemplateCategory } from './template-category.entity';
 
-@Table({ tableName: 'template_sections', timestamps: true })
+@Table({ tableName: 'TemplateSections', timestamps: true })
 export class TemplateSection extends Model {
   @Column({ type: DataType.UUID, defaultValue: DataType.UUIDV4, primaryKey: true })
   id: string;
