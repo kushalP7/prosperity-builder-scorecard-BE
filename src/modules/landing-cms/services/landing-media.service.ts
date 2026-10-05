@@ -16,7 +16,7 @@ export class LandingMediaService {
 
   private collectCloudinaryUrls(media: Partial<LandingMedia>): string[] {
     const urls: string[] = [];
-    if (media.sourceUrl && media.sourceUrl.includes('res.cloudinary.com')) {
+    if (media.sourceUrl && this.uploadsService.isManagedUrl(media.sourceUrl)) {
       urls.push(media.sourceUrl);
     }
     return urls;

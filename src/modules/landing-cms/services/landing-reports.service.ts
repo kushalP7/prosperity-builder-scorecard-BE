@@ -26,35 +26,35 @@ export class LandingReportsService {
 
   private collectCloudinaryUrls(report: Partial<LandingReport>): string[] {
     const urls: string[] = [];
-    if (report.coverImage && report.coverImage.includes('res.cloudinary.com')) {
+    if (report.coverImage && this.uploadsService.isManagedUrl(report.coverImage)) {
       urls.push(report.coverImage);
     }
-    if (report.pdfUrl && report.pdfUrl.includes('res.cloudinary.com')) {
+    if (report.pdfUrl && this.uploadsService.isManagedUrl(report.pdfUrl)) {
       urls.push(report.pdfUrl);
     }
 
     if (Array.isArray(report.blocks)) {
       report.blocks.forEach((block: any) => {
-        if (block?.pdfUrl && block.pdfUrl.includes('res.cloudinary.com')) {
+        if (block?.pdfUrl && this.uploadsService.isManagedUrl(block.pdfUrl)) {
           urls.push(block.pdfUrl);
         }
         if (Array.isArray(block?.images)) {
           block.images.forEach((img: any) => {
-            if (img?.url && img.url.includes('res.cloudinary.com')) {
+            if (img?.url && this.uploadsService.isManagedUrl(img.url)) {
               urls.push(img.url);
             }
           });
         }
         if (Array.isArray(block?.files)) {
           block.files.forEach((f: any) => {
-            if (f?.url && f.url.includes('res.cloudinary.com')) {
+            if (f?.url && this.uploadsService.isManagedUrl(f.url)) {
               urls.push(f.url);
             }
           });
         }
         if (Array.isArray(block?.items)) {
           block.items.forEach((item: any) => {
-            if (item?.imageUrl && item.imageUrl.includes('res.cloudinary.com')) {
+            if (item?.imageUrl && this.uploadsService.isManagedUrl(item.imageUrl)) {
               urls.push(item.imageUrl);
             }
           });
@@ -130,11 +130,11 @@ export class LandingReportsService {
       report.slug = formattedSlug;
     }
 
-    // Clean up replaced coverImage or pdfUrl from Cloudinary if replaced
-    if (dto.coverImage !== undefined && dto.coverImage !== report.coverImage && report.coverImage?.includes('res.cloudinary.com')) {
+    // Clean up replaced coverImage or pdfUrl from storage if replaced
+    if (dto.coverImage !== undefined && dto.coverImage !== report.coverImage && this.uploadsService.isManagedUrl(report.coverImage)) {
       this.uploadsService.deleteFileByUrl(report.coverImage).catch(() => {});
     }
-    if (dto.pdfUrl !== undefined && dto.pdfUrl !== report.pdfUrl && report.pdfUrl?.includes('res.cloudinary.com')) {
+    if (dto.pdfUrl !== undefined && dto.pdfUrl !== report.pdfUrl && this.uploadsService.isManagedUrl(report.pdfUrl)) {
       this.uploadsService.deleteFileByUrl(report.pdfUrl).catch(() => {});
     }
 

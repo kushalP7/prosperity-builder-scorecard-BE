@@ -71,8 +71,8 @@ export class LandingProjectsService {
   async update(id: string, dto: UpdateLandingProjectDto): Promise<LandingProject> {
     const project = await this.findById(id);
 
-    // If PDF changed and old PDF was on Cloudinary, delete old PDF
-    if (dto.pdfUrl && dto.pdfUrl !== project.pdfUrl && project.pdfUrl?.includes('res.cloudinary.com')) {
+    // If PDF changed and old PDF was in storage, delete old PDF
+    if (dto.pdfUrl && dto.pdfUrl !== project.pdfUrl && project.pdfUrl && this.uploadsService.isManagedUrl(project.pdfUrl)) {
       await this.uploadsService.deleteFileByUrl(project.pdfUrl);
     }
 

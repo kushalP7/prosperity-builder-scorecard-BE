@@ -1,4 +1,5 @@
 import { v2 as cloudinary } from 'cloudinary';
+export { CloudinaryStorageProvider } from './providers/cloudinary.provider';
 
 export const CloudinaryProvider = {
   provide: 'CLOUDINARY',

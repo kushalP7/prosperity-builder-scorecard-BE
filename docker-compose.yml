@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   postgres:
     image: postgres:16-alpine
@@ -14,5 +12,20 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
+  minio:
+    image: coollabsio/minio:latest
+    container_name: rose_associates_minio
+    restart: always
+    ports:
+      - "9000:9000"   # S3 API port
+      - "9001:9001"   # Web Console UI
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+
 volumes:
   postgres_data:
+  minio_data:
