@@ -22,7 +22,17 @@ export class LandingMediaService {
     return urls;
   }
 
-  async findAll(query?: { mediaType?: string; category?: string; status?: string; search?: string; featured?: boolean; }): Promise<LandingMedia[]> {
+  async findAll(query?: {
+    mediaType?: string;
+    category?: string;
+    status?: string;
+    search?: string;
+    featured?: boolean;
+    year?: string;
+    sortBy?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<any> {
     const where: any = { deleted: false };
 
     if (query?.mediaType && query.mediaType !== 'all') {
@@ -41,7 +51,7 @@ export class LandingMediaService {
       where.featured = query.featured;
     }
 
-    if (query?.search) {
+    if (query?.search && query.search.trim()) {
       const search = `%${query.search.trim()}%`;
       where[Op.or] = [
         { title: { [Op.iLike]: search } },
@@ -50,11 +60,50 @@ export class LandingMediaService {
       ];
     }
 
+    if (query?.year && query.year !== 'all') {
+      const startOfYear = new Date(`${query.year}-01-01T00:00:00.000Z`);
+      const endOfYear = new Date(`${query.year}-12-31T23:59:59.999Z`);
+      where[Op.and] = [
+        ...(where[Op.and] || []),
+        {
+          createdAt: { [Op.between]: [startOfYear, endOfYear] },
+        },
+      ];
+    }
+
+    let order: any[] = [['createdAt', 'DESC']];
+    if (query?.sortBy === 'oldest') {
+      order = [['createdAt', 'ASC']];
+    } else if (query?.sortBy === 'title_asc') {
+      order = [['title', 'ASC']];
+    } else if (query?.sortBy === 'title_desc') {
+      order = [['title', 'DESC']];
+    }
+
+    if (query?.page !== undefined || query?.limit !== undefined) {
+      const pageNum = Math.max(1, Number(query.page) || 1);
+      const limitNum = Math.max(1, Number(query.limit) || 10);
+      const offset = (pageNum - 1) * limitNum;
+
+      const { rows, count } = await this.mediaModel.findAndCountAll({
+        where,
+        order,
+        limit: limitNum,
+        offset,
+      });
+
+      return {
+        data: rows,
+        total: count,
+        page: pageNum,
+        limit: limitNum,
+        totalPages: Math.ceil(count / limitNum) || 1,
+      };
+    }
+
     return this.mediaModel.findAll({
       where,
-      order: [
-        ['createdAt', 'DESC'],
-      ],
+      order,
     });
   }
 

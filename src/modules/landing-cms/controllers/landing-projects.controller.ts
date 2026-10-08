@@ -15,11 +15,17 @@ export class LandingProjectsController {
   @ApiQuery({ name: 'status', required: false })
   @ApiQuery({ name: 'featured', required: false, type: Boolean })
   @ApiQuery({ name: 'search', required: false })
+  @ApiQuery({ name: 'sortBy', required: false })
+  @ApiQuery({ name: 'page', required: false, type: Number })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
   async findAll(
     @Query('category') category?: string,
     @Query('status') status?: string,
     @Query('featured') featured?: string,
     @Query('search') search?: string,
+    @Query('sortBy') sortBy?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
   ) {
     const featuredOnly = featured === 'true' ? true : featured === 'false' ? false : undefined;
     return this.projectsService.findAll({
@@ -27,6 +33,9 @@ export class LandingProjectsController {
       status,
       featured: featuredOnly,
       search,
+      sortBy,
+      page: page !== undefined && page !== '' ? parseInt(page, 10) : undefined,
+      limit: limit !== undefined && limit !== '' ? parseInt(limit, 10) : undefined,
     });
   }
 

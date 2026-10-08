@@ -14,9 +14,29 @@ export class LandingReportsController {
   @ApiQuery({ name: 'status', required: false })
   @ApiQuery({ name: 'featured', required: false, type: Boolean })
   @ApiQuery({ name: 'search', required: false })
-  async findAll(@Query('status') status?: string, @Query('featured') featured?: string, @Query('search') search?: string) {
+  @ApiQuery({ name: 'page', required: false, type: Number })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiQuery({ name: 'sortBy', required: false })
+  @ApiQuery({ name: 'year', required: false })
+  async findAll(
+    @Query('status') status?: string,
+    @Query('featured') featured?: string,
+    @Query('search') search?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('sortBy') sortBy?: string,
+    @Query('year') year?: string,
+  ) {
     const featuredOnly = featured === 'true';
-    return this.reportsService.findAll(status, featuredOnly, search);
+    return this.reportsService.findAll({
+      status,
+      featuredOnly,
+      search,
+      page: page !== undefined && page !== '' ? parseInt(page, 10) : undefined,
+      limit: limit !== undefined && limit !== '' ? parseInt(limit, 10) : undefined,
+      sortBy,
+      year,
+    });
   }
 
   @Get('slug/:slug')

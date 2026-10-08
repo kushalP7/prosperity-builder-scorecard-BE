@@ -65,23 +65,99 @@ export class LandingReportsService {
     return urls;
   }
 
-  async findAll(status?: string, featuredOnly?: boolean, search?: string): Promise<LandingReport[]> {
+  async findAll(options?: {
+    status?: string;
+    featuredOnly?: boolean;
+    search?: string;
+    page?: number;
+    limit?: number;
+    sortBy?: string;
+    year?: string;
+  } | string, featuredOnlyLegacy?: boolean, searchLegacy?: string): Promise<any> {
+    let status: string | undefined;
+    let featuredOnly: boolean | undefined;
+    let search: string | undefined;
+    let page: number | undefined;
+    let limit: number | undefined;
+    let sortBy: string | undefined;
+    let year: string | undefined;
+
+    if (typeof options === 'object' && options !== null) {
+      status = options.status;
+      featuredOnly = options.featuredOnly;
+      search = options.search;
+      page = options.page;
+      limit = options.limit;
+      sortBy = options.sortBy;
+      year = options.year;
+    } else {
+      status = typeof options === 'string' ? options : undefined;
+      featuredOnly = featuredOnlyLegacy;
+      search = searchLegacy;
+    }
+
     const where: any = { deleted: false };
-    if (status) {
+    if (status && status !== 'all') {
       where.status = status;
     }
     if (featuredOnly) {
       where.featured = true;
     }
-    if (search) {
+    if (search && search.trim()) {
+      const term = search.trim();
       where[Op.or] = [
-        { title: { [Op.iLike]: `%${search}%` } },
-        { summary: { [Op.iLike]: `%${search}%` } },
+        { title: { [Op.iLike]: `%${term}%` } },
+        { summary: { [Op.iLike]: `%${term}%` } },
+        { author: { [Op.iLike]: `%${term}%` } },
       ];
     }
+    if (year && year !== 'all') {
+      const startOfYear = new Date(`${year}-01-01T00:00:00.000Z`);
+      const endOfYear = new Date(`${year}-12-31T23:59:59.999Z`);
+      where[Op.and] = [
+        ...(where[Op.and] || []),
+        {
+          [Op.or]: [
+            { publishedAt: { [Op.between]: [startOfYear, endOfYear] } },
+            { createdAt: { [Op.between]: [startOfYear, endOfYear] } },
+          ],
+        },
+      ];
+    }
+
+    let order: any[] = [['publishedAt', 'DESC'], ['createdAt', 'DESC']];
+    if (sortBy === 'oldest') {
+      order = [['publishedAt', 'ASC'], ['createdAt', 'ASC']];
+    } else if (sortBy === 'title_asc') {
+      order = [['title', 'ASC']];
+    } else if (sortBy === 'title_desc') {
+      order = [['title', 'DESC']];
+    }
+
+    if (page !== undefined || limit !== undefined) {
+      const pageNum = Math.max(1, Number(page) || 1);
+      const limitNum = Math.max(1, Number(limit) || 10);
+      const offset = (pageNum - 1) * limitNum;
+
+      const { rows, count } = await this.reportModel.findAndCountAll({
+        where,
+        order,
+        limit: limitNum,
+        offset,
+      });
+
+      return {
+        data: rows,
+        total: count,
+        page: pageNum,
+        limit: limitNum,
+        totalPages: Math.ceil(count / limitNum) || 1,
+      };
+    }
+
     return this.reportModel.findAll({
       where,
-      order: [['publishedAt', 'DESC'], ['createdAt', 'DESC']],
+      order,
     });
   }
 

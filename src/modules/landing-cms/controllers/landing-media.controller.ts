@@ -16,9 +16,33 @@ export class LandingMediaController {
   @ApiQuery({ name: 'status', required: false, description: 'Filter by status' })
   @ApiQuery({ name: 'featured', required: false, type: Boolean })
   @ApiQuery({ name: 'search', required: false, description: 'Search term' })
-  async findAll(@Query('mediaType') mediaType?: string, @Query('category') category?: string, @Query('status') status?: string, @Query('featured') featured?: string, @Query('search') search?: string) {
+  @ApiQuery({ name: 'year', required: false, description: 'Filter by year' })
+  @ApiQuery({ name: 'sortBy', required: false, description: 'Sort by field' })
+  @ApiQuery({ name: 'page', required: false, type: Number })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  async findAll(
+    @Query('mediaType') mediaType?: string,
+    @Query('category') category?: string,
+    @Query('status') status?: string,
+    @Query('featured') featured?: string,
+    @Query('search') search?: string,
+    @Query('year') year?: string,
+    @Query('sortBy') sortBy?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
     const featuredOnly = featured === 'true' ? true : featured === 'false' ? false : undefined;
-    return this.mediaService.findAll({ mediaType, category, status, featured: featuredOnly, search });
+    return this.mediaService.findAll({
+      mediaType,
+      category,
+      status,
+      featured: featuredOnly,
+      search,
+      year,
+      sortBy,
+      page: page !== undefined && page !== '' ? parseInt(page, 10) : undefined,
+      limit: limit !== undefined && limit !== '' ? parseInt(limit, 10) : undefined,
+    });
   }
 
   @Get(':id')

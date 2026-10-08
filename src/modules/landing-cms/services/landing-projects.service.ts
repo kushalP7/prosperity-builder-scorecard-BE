@@ -19,7 +19,10 @@ export class LandingProjectsService {
     status?: string;
     featured?: boolean;
     search?: string;
-  }): Promise<LandingProject[]> {
+    sortBy?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<any> {
     const where: any = { deleted: false };
 
     if (query?.category && query.category !== 'all') {
@@ -34,7 +37,7 @@ export class LandingProjectsService {
       where.featured = query.featured;
     }
 
-    if (query?.search) {
+    if (query?.search && query.search.trim()) {
       const search = `%${query.search.trim()}%`;
       where[Op.or] = [
         { title: { [Op.iLike]: search } },
@@ -43,9 +46,39 @@ export class LandingProjectsService {
       ];
     }
 
+    let order: any[] = [['createdAt', 'DESC']];
+    if (query?.sortBy === 'oldest') {
+      order = [['createdAt', 'ASC']];
+    } else if (query?.sortBy === 'title_asc') {
+      order = [['title', 'ASC']];
+    } else if (query?.sortBy === 'title_desc') {
+      order = [['title', 'DESC']];
+    }
+
+    if (query?.page !== undefined || query?.limit !== undefined) {
+      const pageNum = Math.max(1, Number(query.page) || 1);
+      const limitNum = Math.max(1, Number(query.limit) || 10);
+      const offset = (pageNum - 1) * limitNum;
+
+      const { rows, count } = await this.projectModel.findAndCountAll({
+        where,
+        order,
+        limit: limitNum,
+        offset,
+      });
+
+      return {
+        data: rows,
+        total: count,
+        page: pageNum,
+        limit: limitNum,
+        totalPages: Math.ceil(count / limitNum) || 1,
+      };
+    }
+
     return this.projectModel.findAll({
       where,
-      order: [['createdAt', 'DESC']],
+      order,
     });
   }
 

@@ -51,13 +51,51 @@ export class S3StorageProvider implements IStorageProvider {
     );
   }
 
+  private formatStorageError(error: any): string {
+    const msg = error?.message || '';
+    const code = error?.code || error?.name || '';
+
+    // Log the full technical stack trace and codes in server logs for developers
+    this.logger.error(`[Storage Tech Details] Code: "${code}", Message: "${msg}"`, error?.stack);
+
+    // 1. Connection Refused or Reset (Storage container offline or network drop)
+    if (code === 'ECONNREFUSED' || msg.includes('ECONNREFUSED') || code === 'ECONNRESET' || msg.includes('ECONNRESET')) {
+      return "Unable to connect to the file storage service. Please make sure the storage service is running and try again.";
+    }
+
+    // 2. AWS S3 Region Mismatch or Misconfiguration
+    if (msg.includes('specified endpoint') || msg.includes('PermanentRedirect') || code === 'NoSuchBucket' || msg.includes('NoSuchBucket')) {
+      return "File storage service is temporarily unavailable due to a configuration issue. Please contact your system administrator.";
+    }
+
+    // 3. Access Denied / IAM Permissions
+    if (msg.includes('not authorized to perform') || msg.includes('Access Denied') || code === 'AccessDenied') {
+      return "Permission denied. You do not have permission to upload files to this storage location. Please contact your system administrator.";
+    }
+
+    // 4. File Too Large
+    if (msg.includes('EntityTooLarge') || msg.includes('too large')) {
+      return "The uploaded file exceeds the maximum allowed file size. Please choose a smaller file.";
+    }
+
+    return "Failed to upload file. Please check your network connection and try again.";
+  }
+
   async ensureBucketExists(): Promise<void> {
     if (this.bucketChecked) return;
 
     try {
       await this.s3Client.send(new HeadBucketCommand({ Bucket: this.bucket }));
       this.bucketChecked = true;
-    } catch {
+    } catch (headErr: any) {
+      const msg = headErr?.message || '';
+      const code = headErr?.code || headErr?.name || '';
+
+      // If connection refused or reset, stop immediately and return clean error
+      if (code === 'ECONNREFUSED' || msg.includes('ECONNREFUSED') || code === 'ECONNRESET' || msg.includes('ECONNRESET')) {
+        throw new BadRequestException(this.formatStorageError(headErr));
+      }
+
       try {
         await this.s3Client.send(new CreateBucketCommand({ Bucket: this.bucket }));
         this.logger.log(`Created bucket "${this.bucket}" automatically.`);
@@ -184,8 +222,9 @@ export class S3StorageProvider implements IStorageProvider {
         originalName: file.originalname,
       };
     } catch (error: any) {
-      this.logger.error(`S3/MinIO upload failed: ${error.message}`, error.stack);
-      throw new BadRequestException(`S3/MinIO upload failed: ${error.message}`);
+      const friendlyMessage = this.formatStorageError(error);
+      this.logger.error(`S3/MinIO upload failed: ${friendlyMessage}`, error.stack);
+      throw new BadRequestException(friendlyMessage);
     }
   }
 
@@ -203,8 +242,9 @@ export class S3StorageProvider implements IStorageProvider {
       );
       return { success: true, result: 'ok' };
     } catch (error: any) {
-      this.logger.error(`Failed to delete object "${key}" from S3/MinIO: ${error.message}`);
-      return { success: false, result: error.message };
+      const friendlyMessage = this.formatStorageError(error);
+      this.logger.error(`Failed to delete object "${key}" from S3/MinIO: ${friendlyMessage}`);
+      return { success: false, result: friendlyMessage };
     }
   }
 
