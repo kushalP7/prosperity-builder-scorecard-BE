@@ -14,6 +14,8 @@ import { UploadsModule } from './modules/uploads/uploads.module';
 import { LandingCmsModule } from './modules/landing-cms/landing-cms.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
+import { InquiriesModule } from './modules/inquiries/inquiries.module';
+import { EmailModule } from './integrations/email/email.module';
 
 @Module({
   imports: [
@@ -22,6 +24,7 @@ import { UsersModule } from './modules/users/users.module';
       envFilePath: '.env',
     }),
     DatabaseModule,
+    EmailModule,
     AuthModule,
     UsersModule,
     SettingsModule,
@@ -35,6 +38,7 @@ import { UsersModule } from './modules/users/users.module';
     SeedModule,
     UploadsModule,
     LandingCmsModule,
+    InquiriesModule,
   ],
 })
 export class AppModule {}

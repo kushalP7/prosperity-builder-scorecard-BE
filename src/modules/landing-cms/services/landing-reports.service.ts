@@ -73,6 +73,7 @@ export class LandingReportsService {
     limit?: number;
     sortBy?: string;
     year?: string;
+    type?: string;
   } | string, featuredOnlyLegacy?: boolean, searchLegacy?: string): Promise<any> {
     let status: string | undefined;
     let featuredOnly: boolean | undefined;
@@ -81,6 +82,7 @@ export class LandingReportsService {
     let limit: number | undefined;
     let sortBy: string | undefined;
     let year: string | undefined;
+    let type: string | undefined;
 
     if (typeof options === 'object' && options !== null) {
       status = options.status;
@@ -90,6 +92,7 @@ export class LandingReportsService {
       limit = options.limit;
       sortBy = options.sortBy;
       year = options.year;
+      type = options.type;
     } else {
       status = typeof options === 'string' ? options : undefined;
       featuredOnly = featuredOnlyLegacy;
@@ -99,6 +102,9 @@ export class LandingReportsService {
     const where: any = { deleted: false };
     if (status && status !== 'all') {
       where.status = status;
+    }
+    if (type && type !== 'all') {
+      where.type = type;
     }
     if (featuredOnly) {
       where.featured = true;

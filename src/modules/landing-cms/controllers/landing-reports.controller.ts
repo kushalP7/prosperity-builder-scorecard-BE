@@ -18,6 +18,7 @@ export class LandingReportsController {
   @ApiQuery({ name: 'limit', required: false, type: Number })
   @ApiQuery({ name: 'sortBy', required: false })
   @ApiQuery({ name: 'year', required: false })
+  @ApiQuery({ name: 'type', required: false })
   async findAll(
     @Query('status') status?: string,
     @Query('featured') featured?: string,
@@ -26,6 +27,7 @@ export class LandingReportsController {
     @Query('limit') limit?: string,
     @Query('sortBy') sortBy?: string,
     @Query('year') year?: string,
+    @Query('type') type?: string,
   ) {
     const featuredOnly = featured === 'true';
     return this.reportsService.findAll({
@@ -36,6 +38,7 @@ export class LandingReportsController {
       limit: limit !== undefined && limit !== '' ? parseInt(limit, 10) : undefined,
       sortBy,
       year,
+      type,
     });
   }
 

@@ -45,6 +45,14 @@ export class CreateLandingReportDto {
   status?: string;
 
   @IsOptional()
+  @IsString()
+  type?: string;
+
+  @IsOptional()
+  @IsString()
+  externalUrl?: string;
+
+  @IsOptional()
   @IsArray()
   blocks?: any[];
 }

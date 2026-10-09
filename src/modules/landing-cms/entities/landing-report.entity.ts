@@ -38,6 +38,12 @@ export class LandingReport extends Model {
   @Column({ type: DataType.STRING, defaultValue: 'published' })
   status: string;
 
+  @Column({ type: DataType.STRING, defaultValue: 'report' })
+  type: string;
+
+  @Column({ type: DataType.TEXT, allowNull: true })
+  externalUrl: string;
+
   @Column({ type: DataType.JSONB, defaultValue: [] })
   blocks: any[];
 

@@ -19,6 +19,7 @@ import { LandingProject } from '../modules/landing-cms/entities/landing-project.
 import { LandingMedia } from '../modules/landing-cms/entities/landing-media.entity';
 import { AnalyticsWidget } from '../modules/analytics/entities/analytics-widget.entity';
 import { User } from '../modules/users/entities/user.entity';
+import { Inquiry } from '../modules/inquiries/entities/inquiry.entity';
 
 @Module({
   imports: [
@@ -50,6 +51,7 @@ import { User } from '../modules/users/entities/user.entity';
           LandingProject,
           LandingMedia,
           AnalyticsWidget,
+          Inquiry,
         ],
         autoLoadModels: true,
         synchronize: true, // Sync database schema automatically in dev mode
