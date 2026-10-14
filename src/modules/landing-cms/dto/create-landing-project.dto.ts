@@ -16,8 +16,9 @@ export class CreateLandingProjectDto {
   @IsNumber()
   longitude: number;
 
+  @IsOptional()
   @IsString()
-  pdfUrl: string;
+  pdfUrl?: string;
 
   @IsOptional()
   @IsBoolean()

@@ -20,8 +20,8 @@ export class LandingProject extends Model {
   @Column({ type: DataType.FLOAT, allowNull: false })
   longitude: number;
 
-  @Column({ type: DataType.TEXT, allowNull: false })
-  pdfUrl: string;
+  @Column({ type: DataType.TEXT, allowNull: true })
+  pdfUrl?: string;
 
   @Column({ type: DataType.BOOLEAN, defaultValue: true })
   featured: boolean;
