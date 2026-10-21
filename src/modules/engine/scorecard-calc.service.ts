@@ -4,15 +4,18 @@ import { Project } from '../projects/entities/project.entity';
 import { ProjectDataRecord } from '../projects/entities/project-data-record.entity';
 import { ScorecardRollup } from './entities/scorecard-rollup.entity';
 import { SCORECARD_CATEGORIES } from './calculator.service';
+import { FormulaEngine } from './formula.engine';
 
 export interface CalculatedRowResult {
   yn: number | null;
   weight: number;
-  value: number;
+  value: number | null;
   clientTotal: number;
   highest: number;
   trend: number;
+  customTargets?: Record<string, number>;
   notes?: string;
+  matchedValueTarget?: boolean;
 }
 
 @Injectable()
@@ -23,23 +26,184 @@ export class ScorecardCalcService {
     @InjectModel(Project) private projectModel: typeof Project,
     @InjectModel(ProjectDataRecord) private recordModel: typeof ProjectDataRecord,
     @InjectModel(ScorecardRollup) private rollupModel: typeof ScorecardRollup,
-  ) {}
+    private formulaEngine: FormulaEngine,
+  ) { }
 
   /**
    * Evaluates an individual row's score metrics based on label, raw base value, and methodology.
+   * Supports dynamic scoringRules from node if configured, with fallback to standard methodology.
    */
-  evaluateRow(nodeLabel: string, rawDataVal: any): CalculatedRowResult {
-    const label = (nodeLabel || '').toLowerCase().trim();
+  evaluateRow(
+    nodeOrLabel: string | any,
+    rawDataVal: any,
+    rowRecordsLookup?: (colIdOrName: string) => any,
+    columns?: any[]
+  ): CalculatedRowResult {
+    const label = (typeof nodeOrLabel === 'string' ? nodeOrLabel : (nodeOrLabel?.label || '')).toLowerCase().trim();
     let numVal = typeof rawDataVal === 'number' ? rawDataVal : Number(rawDataVal);
     const isNumeric = !isNaN(numVal) && rawDataVal !== null && rawDataVal !== '' && rawDataVal !== undefined;
     const isBoolTrue = rawDataVal === true || rawDataVal === 'true' || rawDataVal === 1 || rawDataVal === '1' || (typeof rawDataVal === 'string' && rawDataVal.toLowerCase() === 'yes');
 
+    // ==========================================
+    // 0. Dynamic Row Rules (Configured in Section Maker)
+    // ==========================================
+    if (typeof nodeOrLabel === 'object' && nodeOrLabel !== null) {
+      const dynamicRules = nodeOrLabel.scoringRules;
+      if (Array.isArray(dynamicRules) && dynamicRules.length > 0) {
+        const rowWeight = Number(nodeOrLabel.weight) > 0 ? Number(nodeOrLabel.weight) : 2;
+        let matchedValue: number | null = null;
+        let matchedYn: number | null = null;
+        let matchedHighest: number | null = null;
+        const matchedCustomTargets: Record<string, number> = {};
+
+        for (const rule of dynamicRules) {
+          const ifColId = rule.ifColumnId || '__base__';
+          let sourceVal = rawDataVal;
+          if (ifColId !== '__base__' && ifColId !== 'Data' && ifColId !== 'data' && rowRecordsLookup) {
+            const fetched = rowRecordsLookup(ifColId);
+            if (fetched !== undefined && fetched !== null && fetched !== '') {
+              sourceVal = fetched;
+            } else {
+              sourceVal = null;
+            }
+          }
+
+          if (sourceVal === null || sourceVal === undefined || sourceVal === '') {
+            continue;
+          }
+
+          let ruleNumVal = typeof sourceVal === 'number' ? sourceVal : Number(sourceVal);
+          const ruleIsNumeric = !isNaN(ruleNumVal);
+          const op = rule.operator;
+          const cond = rule.conditionValue;
+          const res = Number(rule.resultValue);
+
+          // Numerical value for comparison (Census API and user inputs are already on the 0-100 percentage scale)
+          let compVal = ruleNumVal;
+
+          let matched = false;
+          if (op === 'equals') {
+            if (ruleIsNumeric && compVal === Number(cond)) matched = true;
+            else if (String(sourceVal).trim().toLowerCase() === String(cond).trim().toLowerCase()) matched = true;
+          } else if (op === 'not_equals') {
+            if (ruleIsNumeric && compVal !== Number(cond)) matched = true;
+            else if (String(sourceVal).trim().toLowerCase() !== String(cond).trim().toLowerCase()) matched = true;
+          } else if (op === 'greater_than' && ruleIsNumeric && compVal > Number(cond)) {
+            matched = true;
+          } else if (op === 'greater_than_or_equals' && ruleIsNumeric && compVal >= Number(cond)) {
+            matched = true;
+          } else if (op === 'less_than' && ruleIsNumeric && compVal < Number(cond)) {
+            matched = true;
+          } else if (op === 'less_than_or_equals' && ruleIsNumeric && compVal <= Number(cond)) {
+            matched = true;
+          } else if (op === 'between' && ruleIsNumeric) {
+            const min = Array.isArray(cond) ? Number(cond[0]) : 0;
+            const max = Array.isArray(cond) ? Number(cond[1]) : 0;
+            if (compVal >= min && compVal <= max) {
+              matched = true;
+            }
+          }
+
+          if (matched) {
+            const targetId = rule.targetColumnId;
+            let targetColName = '';
+            if (targetId && columns && Array.isArray(columns)) {
+              const found = columns.find(c => c.id === targetId || c.name?.trim().toLowerCase() === targetId.trim().toLowerCase());
+              if (found) targetColName = (found.name || '').toLowerCase();
+            }
+
+            const isYn = targetId === '__yn__' || /y\s*\(?1\)?\s*\/\s*n|y_1/i.test(targetColName || targetId || '');
+            const isHighest = targetId === '__highest__' || /highest/i.test(targetColName || targetId || '');
+            const isVal = !targetId || targetId === '__value__' || (targetColName && targetColName.trim() === 'value') || (!targetColName && /value/i.test(targetId || ''));
+
+            if (isYn) {
+              if (matchedYn === null) matchedYn = res;
+            } else if (isHighest) {
+              if (matchedHighest === null) matchedHighest = res;
+            } else if (isVal) {
+              if (matchedValue === null) matchedValue = res;
+            } else if (targetId) {
+              if (matchedCustomTargets[targetId] === undefined) matchedCustomTargets[targetId] = res;
+            }
+          }
+        }
+
+        if (matchedValue !== null || matchedYn !== null || matchedHighest !== null || Object.keys(matchedCustomTargets).length > 0) {
+          let finalVal: number | null = null;
+          let matchedValueTarget = false;
+          if (matchedValue !== null) {
+            finalVal = matchedValue;
+            matchedValueTarget = true;
+          } else if (rowRecordsLookup) {
+            const existingVal = rowRecordsLookup('Value');
+            if (existingVal !== undefined && existingVal !== null && existingVal !== '') {
+              const num = Number(existingVal);
+              finalVal = isNaN(num) ? null : num;
+            }
+          }
+
+          const isBooleanNode = nodeOrLabel?.scoringType === 'boolean';
+          const effectiveVal = isBooleanNode
+            ? (matchedYn !== null ? matchedYn : (finalVal !== null ? finalVal : 0))
+            : (finalVal !== null ? finalVal : (matchedYn !== null ? matchedYn : 0));
+          const valForCalc = effectiveVal;
+          const rowHighest = matchedHighest !== null
+            ? matchedHighest
+            : (Number(nodeOrLabel.highestScore) > 0 ? Number(nodeOrLabel.highestScore) : (rowWeight * Math.max(1, valForCalc)));
+          const clientTotal = Math.min(rowHighest, valForCalc * rowWeight);
+
+          // Check if this row is a presence / binary amenity metric
+          const isPresenceMetric =
+            label.includes('airport') ||
+            label.includes('train') ||
+            label.includes('transit') ||
+            label.includes('bus') ||
+            label.includes('rideshare') ||
+            label.includes('trolley') ||
+            label.includes('bike') ||
+            label.includes('pedestrian') ||
+            label.includes('public art map') ||
+            label.includes('community center') ||
+            label.includes('museum') ||
+            label.includes('theatre') ||
+            label.includes('theater') ||
+            label.includes('event venue') ||
+            label.includes('y(1)') ||
+            label.includes('y_1');
+
+          const ynVal = matchedYn !== null
+            ? matchedYn
+            : (isPresenceMetric ? (valForCalc > 0 || isBoolTrue || (isNumeric && numVal > 0) ? 1 : 0) : null);
+
+          return {
+            yn: ynVal,
+            weight: rowWeight,
+            value: finalVal,
+            clientTotal,
+            highest: rowHighest,
+            trend: 10,
+            customTargets: matchedCustomTargets,
+            matchedValueTarget,
+            notes: `Calculated from custom rule: ${rawDataVal ?? 'None'}`,
+          };
+        }
+      }
+    }
+
     // Default fallbacks
-    let w = 2;
-    let h = 4;
+    let w = typeof nodeOrLabel === 'object' && Number(nodeOrLabel?.weight) > 0 ? Number(nodeOrLabel.weight) : 2;
+    let h = typeof nodeOrLabel === 'object' && Number(nodeOrLabel?.highestScore) > 0 ? Number(nodeOrLabel.highestScore) : 4;
     let yn: number | null = null;
-    let val = 1;
+    let val: number | null = null;
     let notes = '';
+
+    if (rowRecordsLookup) {
+      const existingVal = rowRecordsLookup('Value');
+      if (existingVal !== undefined && existingVal !== null && existingVal !== '') {
+        const num = Number(existingVal);
+        val = isNaN(num) ? null : num;
+      }
+    }
 
     // ==========================================
     // 1. Accessibility & Transportation
@@ -434,7 +598,8 @@ export class ScorecardCalcService {
       }
     }
 
-    const clientTotal = yn !== null ? Math.min(h, yn * w) : Math.min(h, val * w);
+    const valForCalc = val !== null ? val : 0;
+    const clientTotal = yn !== null ? Math.min(h, yn * w) : Math.min(h, valForCalc * w);
     const trend = Math.min(18, Math.max(5, Math.round(6 + clientTotal * 0.7)));
 
     return {
@@ -457,6 +622,17 @@ export class ScorecardCalcService {
     if (!project) return { calculatedRows: 0, overallScore: 0 };
 
     const assignedSections = project.assignedSections || [];
+    if (assignedSections.length === 0) {
+      await this.rollupModel.upsert({
+        projectId,
+        overallScoreTenScale: 0,
+        overallScorePercentage: 0,
+        performanceBand: 'Average',
+        categoryScores: [],
+      });
+      return { calculatedRows: 0, overallScore: 0 };
+    }
+
     const allRecords = await this.recordModel.findAll({ where: { projectId } });
     const recordsMap = new Map<string, ProjectDataRecord>();
     for (const r of allRecords) {
@@ -475,14 +651,20 @@ export class ScorecardCalcService {
       }
 
       for (const cat of section.categories || []) {
-        const columns = cat.columns || [];
-        const ynCol = columns.find((c: any) => c.name === 'Y(1)/N(0)');
-        const wCol = columns.find((c: any) => c.name?.includes('Weight'));
-        const valCol = columns.find((c: any) => c.name === 'Value');
-        const clientCol = columns.find((c: any) => c.name?.includes('Client Total'));
-        const highestCol = columns.find((c: any) => c.name?.includes('Highest'));
-        const trendCol = columns.find((c: any) => c.name?.includes('Trend'));
-        const notesCol = columns.find((c: any) => c.name?.includes('Notes'));
+        const columns = (section.columns && section.columns.length > 0) ? section.columns : (cat.columns || []);
+        const ynCol = columns.find((c: any) =>
+          c.name === 'Y(1)/N(0)' || /y\s*\(?1\)?\s*\/\s*n/i.test(c.name || '') || /^(y_n|yn|yes_no)$/i.test(c.name || '')
+        );
+        const wCol = columns.find((c: any) => /weight/i.test(c.name || ''));
+        const valCol = columns.find((c: any) =>
+          c.name === 'Value' || /^(value|raw_value|metric_value|val)$/i.test(c.name?.trim() || '')
+        );
+        const clientCol = columns.find((c: any) =>
+          /client.*total/i.test(c.name || '') || /total.*score/i.test(c.name || '') || (c.type === 'formula' && c.formulaExpression)
+        );
+        const highestCol = columns.find((c: any) => /highest/i.test(c.name || ''));
+        const trendCol = columns.find((c: any) => /trend/i.test(c.name || ''));
+        const notesCol = columns.find((c: any) => /notes/i.test(c.name || ''));
 
         const nodes = cat.groups && cat.groups.length > 0 ? cat.groups : [cat];
 
@@ -490,8 +672,96 @@ export class ScorecardCalcService {
           const baseRec = recordsMap.get(`${node.id}:__base__`);
           const baseVal = baseRec?.value;
 
-          const evaluated = this.evaluateRow(node.label, baseVal);
+          const rowRecordsLookup = (colIdOrName: string) => {
+            const byId = recordsMap.get(`${node.id}:${colIdOrName}`);
+            if (byId && byId.value !== undefined && byId.value !== null) return byId.value;
+            const matchedCol = columns.find(
+              (c: any) => c.id === colIdOrName || c.name?.trim().toLowerCase() === colIdOrName.trim().toLowerCase(),
+            );
+            if (matchedCol) {
+              const byName = recordsMap.get(`${node.id}:${matchedCol.id}`);
+              if (byName && byName.value !== undefined && byName.value !== null) return byName.value;
+            }
+            return undefined;
+          };
+
+          const evaluated = this.evaluateRow(node, baseVal, rowRecordsLookup, columns);
           calculatedRows++;
+
+          // If evaluated.yn is null, preserve existing Y/N value if user had entered or seeded one
+          const existingYnRec = ynCol ? recordsMap.get(`${node.id}:${ynCol.id}`) : null;
+          const finalYn = evaluated.yn !== null
+            ? evaluated.yn
+            : (existingYnRec && existingYnRec.value !== null && existingYnRec.value !== undefined ? Number(existingYnRec.value) : null);
+
+          // Determine effective score for this row based on scoringType (boolean vs value)
+          const isBooleanType = node.scoringType === 'boolean' || (node.scoringType !== 'value' && finalYn !== null && (evaluated.value === null || evaluated.value === undefined));
+          const effectiveScore = isBooleanType ? (finalYn !== null ? finalYn : 0) : (evaluated.value ?? (finalYn ?? 0));
+
+          // Build dynamic rowContext for formula evaluation
+          const rowContext: Record<string, number> = {
+            data: typeof baseVal === 'number' ? baseVal : Number(baseVal) || 0,
+            Data: typeof baseVal === 'number' ? baseVal : Number(baseVal) || 0,
+            Value: effectiveScore,
+            value: effectiveScore,
+            Weight: evaluated.weight,
+            weight: evaluated.weight,
+            Weight__1_4_: evaluated.weight,
+            Weight_1_4_: evaluated.weight,
+            Y_1__N_0_: finalYn !== null ? finalYn : 0,
+            Highest_Score: evaluated.highest,
+            Highest: evaluated.highest,
+            trend: evaluated.trend,
+            Trend: evaluated.trend,
+          };
+
+          // Also include existing records or default values for all other columns in this row
+          for (const c of columns) {
+            const rec = recordsMap.get(`${node.id}:${c.id}`);
+            const safeName = c.name?.replace(/[^a-zA-Z0-9_]/g, '_');
+            const colDefVal = node.columnDefaults?.[c.id] ?? node.columnDefaults?.[c.name];
+            let valToUse = rec && typeof rec.value === 'number' ? rec.value : undefined;
+            if (valToUse === undefined && colDefVal !== undefined && colDefVal !== null) {
+              const numDef = Number(colDefVal);
+              if (!isNaN(numDef)) valToUse = numDef;
+            }
+            if (safeName && valToUse !== undefined && !isNaN(valToUse)) {
+              rowContext[safeName] = valToUse;
+            }
+          }
+
+          // Dynamic evaluation: Priority 1 is row's own formula (if set), Priority 2 is clientCol's formula
+          const rowFormula = (node.formula && node.formula.trim()) ? node.formula.trim() : null;
+          const colFormula = (clientCol && (clientCol.type === 'formula' || clientCol.formulaExpression)) ? clientCol.formulaExpression?.trim() : null;
+          const exprToEvaluate = rowFormula || colFormula;
+
+          if (exprToEvaluate) {
+            const dynVal = this.formulaEngine.evaluateExpression(exprToEvaluate, rowContext);
+            if (dynVal !== null) {
+              evaluated.clientTotal = dynVal;
+            }
+          }
+
+          // Also evaluate any other custom formula columns
+          const otherFormulaCols = columns.filter((c: any) =>
+            (c.type === 'formula' || (c.formulaExpression && c.formulaExpression.trim())) &&
+            (!clientCol || c.id !== clientCol.id)
+          );
+
+          for (const fCol of otherFormulaCols) {
+            const fVal = this.formulaEngine.evaluateExpression(fCol.formulaExpression, rowContext);
+            if (fVal !== null) {
+              const safeName = fCol.name?.replace(/[^a-zA-Z0-9_]/g, '_');
+              if (safeName) rowContext[safeName] = fVal;
+              recordsToUpsert.push({
+                projectId,
+                nodeId: node.id,
+                columnId: fCol.id,
+                value: fVal,
+                scoreValue: fVal,
+              });
+            }
+          }
 
           categoryAccumulator[catKey].clientTotal += evaluated.clientTotal;
           categoryAccumulator[catKey].highestTotal += evaluated.highest;
@@ -501,8 +771,8 @@ export class ScorecardCalcService {
               projectId,
               nodeId: node.id,
               columnId: ynCol.id,
-              value: evaluated.yn,
-              scoreValue: evaluated.yn !== null ? evaluated.yn : 0,
+              value: finalYn,
+              scoreValue: finalYn !== null ? finalYn : 0,
             });
           }
           if (wCol) {
@@ -514,13 +784,19 @@ export class ScorecardCalcService {
               scoreValue: evaluated.weight,
             });
           }
-          if (valCol) {
+          const existingValRec = valCol ? recordsMap.get(`${node.id}:${valCol.id}`) : null;
+          let finalVal = evaluated.value;
+          if (finalVal === null && existingValRec && existingValRec.value !== null && existingValRec.value !== undefined && existingValRec.value !== '') {
+            finalVal = Number(existingValRec.value);
+          }
+
+          if (valCol && (evaluated.matchedValueTarget || finalVal !== null)) {
             recordsToUpsert.push({
               projectId,
               nodeId: node.id,
               columnId: valCol.id,
-              value: evaluated.value,
-              scoreValue: evaluated.value,
+              value: finalVal,
+              scoreValue: finalVal !== null ? finalVal : 0,
             });
           }
           if (clientCol) {
@@ -550,6 +826,19 @@ export class ScorecardCalcService {
               scoreValue: evaluated.trend,
             });
           }
+          if (evaluated.customTargets) {
+            for (const [colId, cVal] of Object.entries(evaluated.customTargets)) {
+              if (colId !== ynCol?.id && colId !== valCol?.id && colId !== highestCol?.id) {
+                recordsToUpsert.push({
+                  projectId,
+                  nodeId: node.id,
+                  columnId: colId,
+                  value: cVal,
+                  scoreValue: cVal,
+                });
+              }
+            }
+          }
           if (notesCol && evaluated.notes) {
             recordsToUpsert.push({
               projectId,
@@ -567,34 +856,26 @@ export class ScorecardCalcService {
       await this.recordModel.upsert(rec);
     }
 
-    // Now recalculate ScorecardRollup from real calculated rows
-    const categoryScores = SCORECARD_CATEGORIES.map((cat, idx) => {
-      // Find matching accumulator
-      let matchedAcc = Object.entries(categoryAccumulator).find(([k]) =>
-        k.includes(cat.key.slice(0, 5)) || cat.key.includes(k.slice(0, 5)),
-      )?.[1];
+    // Now recalculate ScorecardRollup from real calculated rows strictly for assigned sections
+    const categoryScores = assignedSections.map((section: any, idx: number) => {
+      const secTitle = section.label || section.title || `Section ${idx + 1}`;
+      const catKey = secTitle.toLowerCase().replace(/[^a-z0-9]/g, '_');
+      const acc = categoryAccumulator[catKey] || { clientTotal: 0, highestTotal: 0 };
 
-      let clientPoints = matchedAcc?.clientTotal || 0;
-      let maxPoints = matchedAcc?.highestTotal || 0;
-
-      // Fallback baseline if section had 0 rows
-      if (maxPoints === 0) {
-        clientPoints = 42 + ((idx * 7) % 25);
-        maxPoints = 60 + ((idx * 3) % 15);
-      }
-
-      const scorePct = Number(((clientPoints / maxPoints) * 100).toFixed(1));
+      const clientPoints = Number(acc.clientTotal.toFixed(1));
+      const maxPoints = Number(acc.highestTotal.toFixed(1));
+      const scorePct = maxPoints > 0 ? Number(((clientPoints / maxPoints) * 100).toFixed(1)) : 0;
       const score10 = Number((scorePct / 10).toFixed(1));
 
       return {
-        categoryKey: cat.key,
-        categoryLabel: cat.label,
+        categoryKey: catKey,
+        categoryLabel: secTitle,
         totalClientPoints: clientPoints,
         totalMaxPoints: maxPoints,
         scorePercentage: scorePct,
         scoreTenScale: score10,
         rank: 0,
-        metricsCount: 6,
+        metricsCount: (section.categories || []).reduce((sum: number, c: any) => sum + (c.groups?.length || 1), 0) || 6,
       };
     });
 
@@ -606,7 +887,7 @@ export class ScorecardCalcService {
     });
 
     const sumTenScale = categoryScores.reduce((sum, c) => sum + c.scoreTenScale, 0);
-    const overallScoreTenScale = Number((sumTenScale / 12).toFixed(1));
+    const overallScoreTenScale = categoryScores.length > 0 ? Number((sumTenScale / categoryScores.length).toFixed(1)) : 0;
     const overallScorePercentage = Number((overallScoreTenScale * 10).toFixed(1));
 
     const band = overallScoreTenScale <= 2.0 ? 'Poor' : overallScoreTenScale <= 7.0 ? 'Average' : overallScoreTenScale <= 9.0 ? 'Good' : 'Excellent';

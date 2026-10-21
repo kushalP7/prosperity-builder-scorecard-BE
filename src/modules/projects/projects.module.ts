@@ -8,14 +8,15 @@ import { ProjectsController } from './projects.controller';
 
 import { forwardRef } from '@nestjs/common';
 import { EngineModule } from '../engine/engine.module';
+import { ScorecardRollup } from '../engine/entities/scorecard-rollup.entity';
 
 @Module({
   imports: [
-    SequelizeModule.forFeature([Project, ProjectDataRecord, TemplateSection]),
+    SequelizeModule.forFeature([Project, ProjectDataRecord, TemplateSection, ScorecardRollup]),
     forwardRef(() => EngineModule),
   ],
   controllers: [ProjectsController],
   providers: [ProjectsService],
   exports: [ProjectsService, SequelizeModule],
 })
-export class ProjectsModule {}
+export class ProjectsModule { }

@@ -1,6 +1,5 @@
-import { Table, Column, Model, DataType, ForeignKey, BelongsTo, HasMany } from 'sequelize-typescript';
-import { TemplateCategory } from './template-category.entity';
-import { TemplateGroup } from './template-group.entity';
+import { Table, Column, Model, DataType, ForeignKey, BelongsTo } from 'sequelize-typescript';
+import { TemplateSection } from './template-section.entity';
 
 export enum ColumnType {
   NUMBER = 'number',
@@ -15,19 +14,12 @@ export class TemplateColumn extends Model {
   @Column({ type: DataType.UUID, defaultValue: DataType.UUIDV4, primaryKey: true })
   id: string;
 
-  @ForeignKey(() => TemplateCategory)
-  @Column({ type: DataType.UUID, allowNull: true })
-  categoryId: string;
+  @ForeignKey(() => TemplateSection)
+  @Column({ type: DataType.UUID, allowNull: false })
+  sectionId: string;
 
-  @BelongsTo(() => TemplateCategory)
-  category: TemplateCategory;
-
-  @ForeignKey(() => TemplateGroup)
-  @Column({ type: DataType.UUID, allowNull: true })
-  groupId: string;
-
-  @BelongsTo(() => TemplateGroup)
-  group: TemplateGroup;
+  @BelongsTo(() => TemplateSection)
+  section: TemplateSection;
 
   @Column({ type: DataType.STRING, allowNull: false })
   name: string;

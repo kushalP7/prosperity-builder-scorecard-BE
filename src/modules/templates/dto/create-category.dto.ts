@@ -10,9 +10,4 @@ export class CreateCategoryDto {
   @IsOptional()
   @IsString()
   description?: string;
-
-  @ApiProperty({ default: false, required: false })
-  @IsOptional()
-  @IsBoolean()
-  takesValues?: boolean;
 }

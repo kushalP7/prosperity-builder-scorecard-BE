@@ -1,7 +1,6 @@
 import { Table, Column, Model, DataType, ForeignKey, BelongsTo, HasMany } from 'sequelize-typescript';
 import { TemplateSection } from './template-section.entity';
 import { TemplateGroup } from './template-group.entity';
-import { TemplateColumn } from './template-column.entity';
 
 @Table({ tableName: 'TemplateCategories', timestamps: true })
 export class TemplateCategory extends Model {
@@ -21,12 +20,6 @@ export class TemplateCategory extends Model {
   @Column({ type: DataType.TEXT, allowNull: true })
   description: string;
 
-  @Column({ type: DataType.BOOLEAN, defaultValue: false })
-  takesValues: boolean;
-
   @HasMany(() => TemplateGroup, { onDelete: 'CASCADE' })
   groups: TemplateGroup[];
-
-  @HasMany(() => TemplateColumn, { onDelete: 'CASCADE' })
-  columns: TemplateColumn[];
 }

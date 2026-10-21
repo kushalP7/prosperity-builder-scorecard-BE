@@ -9,7 +9,7 @@ export class AppSettings extends Model {
   @Column({ type: DataType.STRING, defaultValue: 'Rose Associates', allowNull: false })
   companyName: string;
 
-  @Column({ type: DataType.STRING, allowNull: true })
+  @Column({ type: DataType.TEXT, allowNull: true })
   companyLogoUrl: string;
 
   @Column({ type: DataType.STRING, allowNull: true })
@@ -17,6 +17,21 @@ export class AppSettings extends Model {
 
   @Column({ type: DataType.STRING, allowNull: true })
   companyPhone: string;
+
+  @Column({
+    type: DataType.JSONB,
+    allowNull: true,
+    defaultValue: {
+      reportPrice: 15000,
+      subscriptionPrice: 36000,
+      combinedPrice: 48000,
+    },
+  })
+  planPrices: {
+    reportPrice: number;
+    subscriptionPrice: number;
+    combinedPrice: number;
+  };
 
   @HasMany(() => RatingBand)
   ratingBands: RatingBand[];

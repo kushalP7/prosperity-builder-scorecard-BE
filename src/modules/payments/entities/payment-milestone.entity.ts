@@ -35,9 +35,9 @@ export class PaymentMilestone extends Model {
   @Column({ type: DataType.INTEGER, allowNull: false })
   percentage: number; // 40, 30, or 30
 
-  @Column({ 
-    type: DataType.ENUM(...Object.values(PaymentStatus)), 
-    defaultValue: PaymentStatus.BYPASSED 
+  @Column({
+    type: DataType.ENUM(...Object.values(PaymentStatus)),
+    defaultValue: PaymentStatus.BYPASSED
   })
   status: PaymentStatus;
 

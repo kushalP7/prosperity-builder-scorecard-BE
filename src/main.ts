@@ -4,11 +4,15 @@ import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
+const compression = require('compression');
 
 // Enterprise Inquiries & Scorecard Contact module enabled
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
   const app = await NestFactory.create(AppModule);
+
+  // Enable HTTP Gzip compression for fast payloads
+  app.use(compression());
 
   // Enable CORS
   app.enableCors({
@@ -47,9 +51,9 @@ async function bootstrap() {
 
   const port = process.env.PORT;
   await app.listen(port);
-  logger.log(`🚀 NestJS Backend Application running on: http://localhost:${port}`);
+  logger.log(`NestJS Backend Application running on: http://localhost:${port}`);
   if (process.env.NODE_ENV !== 'production') {
-    logger.log(`📚 Swagger API Documentation available at: http://localhost:${port}/api/docs`);
+    logger.log(`Swagger API Documentation available at: http://localhost:${port}/api/docs`);
   }
 }
 

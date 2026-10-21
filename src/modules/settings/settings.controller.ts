@@ -9,14 +9,14 @@ export class SettingsController {
   constructor(private readonly settingsService: SettingsService) {}
 
   @Get()
-  @ApiOperation({ summary: 'Get application profile settings and score rating bands' })
+  @ApiOperation({ summary: 'Get application settings and plan pricing rates' })
   async getSettings() {
     const settings = await this.settingsService.getSettings();
     return { success: true, data: settings };
   }
 
   @Put()
-  @ApiOperation({ summary: 'Update company profile and rating bands' })
+  @ApiOperation({ summary: 'Update application plan pricing rates and settings' })
   async updateSettings(@Body() dto: UpdateSettingsDto) {
     const updated = await this.settingsService.updateSettings(dto);
     return { success: true, data: updated };

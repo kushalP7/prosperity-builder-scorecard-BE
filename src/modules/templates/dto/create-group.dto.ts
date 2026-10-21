@@ -11,8 +11,29 @@ export class CreateGroupDto {
   @IsString()
   description?: string;
 
-  @ApiProperty({ default: false, required: false })
+  @ApiProperty({ default: 2, required: false })
   @IsOptional()
-  @IsBoolean()
-  takesValues?: boolean;
+  weight?: number;
+
+  @ApiProperty({ default: 4, required: false })
+  @IsOptional()
+  highestScore?: number;
+
+  @ApiProperty({ default: [], required: false })
+  @IsOptional()
+  scoringRules?: any[];
+
+  @ApiProperty({ default: {}, required: false })
+  @IsOptional()
+  columnDefaults?: Record<string, any>;
+
+  @ApiProperty({ enum: ['value', 'boolean'], default: 'value', required: false })
+  @IsOptional()
+  @IsString()
+  scoringType?: 'value' | 'boolean';
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  formula?: string;
 }

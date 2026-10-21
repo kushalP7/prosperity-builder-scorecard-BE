@@ -1,6 +1,5 @@
-import { Table, Column, Model, DataType, ForeignKey, BelongsTo, HasMany } from 'sequelize-typescript';
+import { Table, Column, Model, DataType, ForeignKey, BelongsTo } from 'sequelize-typescript';
 import { TemplateCategory } from './template-category.entity';
-import { TemplateColumn } from './template-column.entity';
 
 @Table({ tableName: 'TemplateGroups', timestamps: true })
 export class TemplateGroup extends Model {
@@ -20,9 +19,21 @@ export class TemplateGroup extends Model {
   @Column({ type: DataType.TEXT, allowNull: true })
   description: string;
 
-  @Column({ type: DataType.BOOLEAN, defaultValue: false })
-  takesValues: boolean;
+  @Column({ type: DataType.FLOAT, defaultValue: 2.0, allowNull: true })
+  weight: number;
 
-  @HasMany(() => TemplateColumn, { onDelete: 'CASCADE' })
-  columns: TemplateColumn[];
+  @Column({ type: DataType.FLOAT, defaultValue: 4.0, allowNull: true })
+  highestScore: number;
+
+  @Column({ type: DataType.JSONB, defaultValue: [], allowNull: true })
+  scoringRules: any[];
+
+  @Column({ type: DataType.JSONB, defaultValue: {}, allowNull: true })
+  columnDefaults: Record<string, any>;
+
+  @Column({ type: DataType.STRING, defaultValue: 'value', allowNull: true })
+  scoringType: 'value' | 'boolean';
+
+  @Column({ type: DataType.TEXT, allowNull: true })
+  formula: string;
 }

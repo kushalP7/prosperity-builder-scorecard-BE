@@ -8,7 +8,7 @@ export class PaymentsService {
   constructor(
     @InjectModel(PaymentMilestone) private milestoneModel: typeof PaymentMilestone,
     @InjectModel(Project) private projectModel: typeof Project,
-  ) {}
+  ) { }
 
   async createDefaultMilestones(projectId: string, totalAmount = 5000): Promise<PaymentMilestone[]> {
     const existing = await this.milestoneModel.findAll({ where: { projectId } });

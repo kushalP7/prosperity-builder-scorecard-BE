@@ -12,7 +12,7 @@ export class UsersService {
     @InjectModel(User)
     private readonly userModel: typeof User,
     private readonly passwordService: PasswordService,
-  ) {}
+  ) { }
 
   async findAll(search?: string) {
     const where: any = {};
@@ -60,12 +60,12 @@ export class UsersService {
     const hashedPassword = await this.passwordService.hash(dto.password);
 
     // Pick avatar color based on role
-      const avatarBgMap: Record<string, string> = {
-        super_admin: 'bg-[#7c0d15] text-white',
-        project_lead: 'bg-blue-600 text-white',
-        assessment_specialist: 'bg-emerald-600 text-white',
-        client_viewer: 'bg-slate-700 text-white',
-      };
+    const avatarBgMap: Record<string, string> = {
+      super_admin: 'bg-[#7c0d15] text-white',
+      project_lead: 'bg-blue-600 text-white',
+      assessment_specialist: 'bg-emerald-600 text-white',
+      client_viewer: 'bg-slate-700 text-white',
+    };
     const role = dto.role || 'client_viewer';
 
     const user = await this.userModel.create({

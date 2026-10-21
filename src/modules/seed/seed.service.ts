@@ -34,7 +34,7 @@ export class SeedService implements OnApplicationBootstrap {
     @InjectModel(QuestionnaireSubmission) private questionnaireModel: typeof QuestionnaireSubmission,
     @InjectModel(ScorecardRollup) private rollupModel: typeof ScorecardRollup,
     private sequelize: Sequelize,
-  ) {}
+  ) { }
 
   async onApplicationBootstrap(): Promise<void> {
     await this.seedUsers();
@@ -121,7 +121,7 @@ export class SeedService implements OnApplicationBootstrap {
         }
       }
 
-      this.logger.log('✅ Successfully synced domain roles: super_admin, project_lead, assessment_specialist, client_viewer.');
+      this.logger.log('Successfully synced domain roles: super_admin, project_lead, assessment_specialist, client_viewer.');
     } catch (err: any) {
       this.logger.error(`Error seeding users: ${err.message}`);
     }
@@ -130,8 +130,9 @@ export class SeedService implements OnApplicationBootstrap {
   async populateSampleData(): Promise<void> {
     await this.seedUsers();
     const existingProjectCount = await this.projectModel.count();
-    if (existingProjectCount > 0) {
-      this.logger.log('Sample data already exists, skipping seed.');
+    const existingSectionCount = await this.sectionModel.count();
+    if (existingProjectCount > 0 || existingSectionCount > 0) {
+      this.logger.log('Sample data or template sections already exist, skipping seed.');
       return;
     }
 
@@ -225,87 +226,125 @@ export class SeedService implements OnApplicationBootstrap {
 
       if (name === "Accessibility & Transportation") {
         specificRows = [
-          { cat: 'Major Routes', rows: [
-            { name: '*Interstate If \'Data\' None = 0; 1-2 = 1; <2 = 2', d: '0', yn: null, w: 4, h: 8 },
-            { name: 'US Highway If \'Data\' 0-1 = 0; 1-3 = 1; <3 = 2', d: '0', yn: null, w: 3, h: 6 },
-            { name: 'State Highway If \'Data\' 0-1 = 0; 1-3 = 1; <3 = 2', d: '0', yn: null, w: 2, h: 4 }
-          ]},
-          { cat: 'HH w/o Vehicle', rows: [
-            { name: 'HH w/o Vehicle', d: '0.0%', yn: null, w: 3, h: 9 }
-          ]},
-          { cat: 'Average commute time', rows: [
-            { name: 'Average commute time', d: '0', yn: null, w: 3, h: 12 }
-          ]},
-          { cat: 'Public transportation options', rows: [
-            { name: 'Airport', d: '0', yn: 2, w: 4, h: 4 },
-            { name: 'Train', d: '0', yn: null, w: 4, h: 4 },
-            { name: 'Rapid Bus Transit', d: '0', yn: null, w: 4, h: 4 },
-            { name: 'City Bus', d: '0', yn: 3, w: 3, h: 3 },
-            { name: 'Trolley/Other', d: '0', yn: 1, w: 2, h: 2 },
-            { name: 'Local Rideshare/Micro Transit', d: '0', yn: null, w: 2, h: 2 }
-          ]},
-          { cat: 'State transportation funds (# of funded or scheduled STIP projects)', rows: [
-            { name: 'State transportation funds (# of funded or scheduled STIP projects)', d: '0', yn: null, w: 4, h: 8 }
-          ]},
-          { cat: 'Bike and Ped Plan', rows: [
-            { name: 'Bike and Ped Plan', d: '0', yn: 1, w: 3, h: 3 }
-          ]}
+          {
+            cat: 'Major Routes', rows: [
+              { name: '*Interstate If \'Data\' None = 0; 1-2 = 1; <2 = 2', d: '0', yn: null, w: 4, h: 8 },
+              { name: 'US Highway If \'Data\' 0-1 = 0; 1-3 = 1; <3 = 2', d: '0', yn: null, w: 3, h: 6 },
+              { name: 'State Highway If \'Data\' 0-1 = 0; 1-3 = 1; <3 = 2', d: '0', yn: null, w: 2, h: 4 }
+            ]
+          },
+          {
+            cat: 'HH w/o Vehicle', rows: [
+              { name: 'HH w/o Vehicle', d: '0.0%', yn: null, w: 3, h: 9 }
+            ]
+          },
+          {
+            cat: 'Average commute time', rows: [
+              { name: 'Average commute time', d: '0', yn: null, w: 3, h: 12 }
+            ]
+          },
+          {
+            cat: 'Public transportation options', rows: [
+              { name: 'Airport', d: '0', yn: 2, w: 4, h: 4 },
+              { name: 'Train', d: '0', yn: null, w: 4, h: 4 },
+              { name: 'Rapid Bus Transit', d: '0', yn: null, w: 4, h: 4 },
+              { name: 'City Bus', d: '0', yn: 3, w: 3, h: 3 },
+              { name: 'Trolley/Other', d: '0', yn: 1, w: 2, h: 2 },
+              { name: 'Local Rideshare/Micro Transit', d: '0', yn: null, w: 2, h: 2 }
+            ]
+          },
+          {
+            cat: 'State transportation funds (# of funded or scheduled STIP projects)', rows: [
+              { name: 'State transportation funds (# of funded or scheduled STIP projects)', d: '0', yn: null, w: 4, h: 8 }
+            ]
+          },
+          {
+            cat: 'Bike and Ped Plan', rows: [
+              { name: 'Bike and Ped Plan', d: '0', yn: 1, w: 3, h: 3 }
+            ]
+          }
         ];
       } else if (name === "Arts & Culture") {
         specificRows = [
-          { cat: 'Public Art installations', rows: [
-            { name: 'Public Art If none = 0; 1-5 = 1 ; >5 = 2', d: '0', yn: null, w: 3, h: 6 },
-            { name: 'Murals If none = 0; 1-5 = 1 ; >5 = 2', d: '0', yn: null, w: 2, h: 4 }
-          ]},
-          { cat: 'Public Art Map', rows: [
-            { name: 'Public Art Map', d: '0', yn: 1, w: 2, h: 2 }
-          ]},
-          { cat: 'Cultural facilities (Theatre, museum, art, music)', rows: [
-            { name: 'Arts/Community Center', d: '0', yn: 1, w: 2, h: 2 },
-            { name: 'Museum', d: '0', yn: 1, w: 2, h: 2 },
-            { name: 'Theatre', d: '0', yn: 1, w: 2, h: 2 },
-            { name: 'Event Venues', d: '0', yn: 1, w: 2, h: 2 }
-          ]},
-          { cat: 'Event Programs (Festivals etc)', rows: [
-            { name: 'Event Programs (Festivals etc)', d: '0', yn: null, w: 4, h: 12 }
-          ]},
-          { cat: '% of employment in Arts, Entertainment Sector', rows: [
-            { name: '% of employment in Arts, Entertainment Sector*', d: '0.0%', yn: null, w: 4, h: 8 }
-          ]}
+          {
+            cat: 'Public Art installations', rows: [
+              { name: 'Public Art If none = 0; 1-5 = 1 ; >5 = 2', d: '0', yn: null, w: 3, h: 6 },
+              { name: 'Murals If none = 0; 1-5 = 1 ; >5 = 2', d: '0', yn: null, w: 2, h: 4 }
+            ]
+          },
+          {
+            cat: 'Public Art Map', rows: [
+              { name: 'Public Art Map', d: '0', yn: 1, w: 2, h: 2 }
+            ]
+          },
+          {
+            cat: 'Cultural facilities (Theatre, museum, art, music)', rows: [
+              { name: 'Arts/Community Center', d: '0', yn: 1, w: 2, h: 2 },
+              { name: 'Museum', d: '0', yn: 1, w: 2, h: 2 },
+              { name: 'Theatre', d: '0', yn: 1, w: 2, h: 2 },
+              { name: 'Event Venues', d: '0', yn: 1, w: 2, h: 2 }
+            ]
+          },
+          {
+            cat: 'Event Programs (Festivals etc)', rows: [
+              { name: 'Event Programs (Festivals etc)', d: '0', yn: null, w: 4, h: 12 }
+            ]
+          },
+          {
+            cat: '% of employment in Arts, Entertainment Sector', rows: [
+              { name: '% of employment in Arts, Entertainment Sector*', d: '0.0%', yn: null, w: 4, h: 8 }
+            ]
+          }
         ];
       } else if (name === "Crime & Public Safety") {
         specificRows = [
-          { cat: 'Personal Crime Index', rows: [
-            { name: 'Personal Crime Index', d: '0', yn: null, w: 4, h: 16 }
-          ]},
-          { cat: 'Property Crime Index < 100', rows: [
-            { name: 'Property Crime Index < 100', d: '0', yn: null, w: 3, h: 12 }
-          ]},
-          { cat: 'Bonus: Officer to Resident Ratio', rows: [
-            { name: 'Bonus: Officer to Resident Ratio', d: '0', yn: 1, w: 2, h: 2 }
-          ]}
+          {
+            cat: 'Personal Crime Index', rows: [
+              { name: 'Personal Crime Index', d: '0', yn: null, w: 4, h: 16 }
+            ]
+          },
+          {
+            cat: 'Property Crime Index < 100', rows: [
+              { name: 'Property Crime Index < 100', d: '0', yn: null, w: 3, h: 12 }
+            ]
+          },
+          {
+            cat: 'Bonus: Officer to Resident Ratio', rows: [
+              { name: 'Bonus: Officer to Resident Ratio', d: '0', yn: 1, w: 2, h: 2 }
+            ]
+          }
         ];
       } else if (name === "Education") {
         specificRows = [
-          { cat: 'HS Graduation', rows: [
-            { name: 'HS Graduation', d: '0', yn: null, w: 2, h: 2 }
-          ]},
-          { cat: 'College', rows: [
-            { name: 'Some college, no degree', d: '0', yn: null, w: 2, h: 2 },
-            { name: 'Associates Degree', d: '0', yn: null, w: 3, h: 3 },
-            { name: 'Bachelor Degree', d: '0', yn: null, w: 4, h: 4 },
-            { name: 'Graduate/PhD', d: '0', yn: null, w: 4, h: 4 }
-          ]},
-          { cat: 'K-12 Performance (Low Performing Schools)', rows: [
-            { name: 'K-12 Performance (Low Performing Schools)', d: '0', yn: null, w: 4, h: 16 }
-          ]},
-          { cat: 'K-12 Chronic Absentism', rows: [
-            { name: 'K-12 Chronic Absentism', d: '0', yn: null, w: 3, h: 12 }
-          ]},
-          { cat: 'Secondary Education', rows: [
-            { name: 'Community College/Trade School', d: '0', yn: null, w: 3, h: 6 },
-            { name: 'College/Universities', d: '0', yn: null, w: 4, h: 8 }
-          ]}
+          {
+            cat: 'HS Graduation', rows: [
+              { name: 'HS Graduation', d: '0', yn: null, w: 2, h: 2 }
+            ]
+          },
+          {
+            cat: 'College', rows: [
+              { name: 'Some college, no degree', d: '0', yn: null, w: 2, h: 2 },
+              { name: 'Associates Degree', d: '0', yn: null, w: 3, h: 3 },
+              { name: 'Bachelor Degree', d: '0', yn: null, w: 4, h: 4 },
+              { name: 'Graduate/PhD', d: '0', yn: null, w: 4, h: 4 }
+            ]
+          },
+          {
+            cat: 'K-12 Performance (Low Performing Schools)', rows: [
+              { name: 'K-12 Performance (Low Performing Schools)', d: '0', yn: null, w: 4, h: 16 }
+            ]
+          },
+          {
+            cat: 'K-12 Chronic Absentism', rows: [
+              { name: 'K-12 Chronic Absentism', d: '0', yn: null, w: 3, h: 12 }
+            ]
+          },
+          {
+            cat: 'Secondary Education', rows: [
+              { name: 'Community College/Trade School', d: '0', yn: null, w: 3, h: 6 },
+              { name: 'College/Universities', d: '0', yn: null, w: 4, h: 8 }
+            ]
+          }
         ];
       } else if (name === "Employment & Labor") {
         specificRows = [
@@ -391,37 +430,42 @@ export class SeedService implements OnApplicationBootstrap {
         ];
       }
 
+      // Create the exact 7 columns attached to this SECTION
+      const cols = await this.columnModel.bulkCreate(
+        [
+          { sectionId: section.id, name: 'Y(1)/N(0)', type: ColumnType.NUMBER, validationMin: 0, validationMax: 1, scoringRule: { kind: 'manual', maxPoints: 1 } },
+          { sectionId: section.id, name: 'Weight (1-4)', type: ColumnType.NUMBER, validationMin: 1, validationMax: 4, scoringRule: { kind: 'manual', maxPoints: 4 } },
+          { sectionId: section.id, name: 'Value', type: ColumnType.NUMBER, validationMin: 0, validationMax: 10, scoringRule: { kind: 'manual', maxPoints: 10 } },
+          { sectionId: section.id, name: 'Client Total Score', type: ColumnType.FORMULA, formulaExpression: 'Weight_1_4_ * Value', validationMin: 0, validationMax: 100, isReadOnly: true, scoringRule: { kind: 'manual', maxPoints: 10 } },
+          { sectionId: section.id, name: 'Highest Score', type: ColumnType.NUMBER, validationMin: 0, validationMax: 100, scoringRule: { kind: 'manual', maxPoints: 10 } },
+          { sectionId: section.id, name: 'Local Data Result & Notes', type: ColumnType.TEXT, validationMin: null, validationMax: null, scoringRule: { kind: 'manual', maxPoints: 0 } },
+        ],
+        { transaction },
+      );
+
       const categories: any[] = [];
 
       if (specificRows) {
         for (let cIdx = 0; cIdx < specificRows.length; cIdx++) {
           const catObj = specificRows[cIdx];
           const category = await this.categoryModel.create(
-            { sectionId: section.id, label: catObj.cat, takesValues: false },
+            { sectionId: section.id, label: catObj.cat },
             { transaction },
           );
-
-          // Create the exact 7 columns attached to THIS category with exact scoringRules from seed.ts
-          const cols = await this.columnModel.bulkCreate(
-            [
-              { categoryId: category.id, name: 'Y(1)/N(0)', type: ColumnType.NUMBER, validationMin: 0, validationMax: 1, scoringRule: { kind: 'manual', maxPoints: 1 } },
-              { categoryId: category.id, name: 'Weight (1-4)', type: ColumnType.NUMBER, validationMin: 1, validationMax: 4, scoringRule: { kind: 'manual', maxPoints: 4 } },
-              { categoryId: category.id, name: 'Value', type: ColumnType.NUMBER, validationMin: 0, validationMax: 10, scoringRule: { kind: 'manual', maxPoints: 10 } },
-              { categoryId: category.id, name: 'Client Total Score', type: ColumnType.NUMBER, validationMin: 0, validationMax: 100, scoringRule: { kind: 'manual', maxPoints: 10 } },
-              { categoryId: category.id, name: 'Highest Score', type: ColumnType.NUMBER, validationMin: 0, validationMax: 100, scoringRule: { kind: 'manual', maxPoints: 10 } },
-              { categoryId: category.id, name: 'Overall Trend', type: ColumnType.NUMBER, validationMin: 0, validationMax: 20, scoringRule: { kind: 'manual', maxPoints: 0 } },
-              { categoryId: category.id, name: 'Local Data Result & Notes', type: ColumnType.TEXT, validationMin: null, validationMax: null, scoringRule: { kind: 'manual', maxPoints: 0 } },
-            ],
-            { transaction },
-          );
-
-          const columns = cols.map((c) => c.toJSON());
 
           const createdGroups: any[] = [];
           for (let rIdx = 0; rIdx < catObj.rows.length; rIdx++) {
             const r = catObj.rows[rIdx];
+            const groupConfig = this.getExcelScoringRules(r.name);
             const group = await this.groupModel.create(
-              { categoryId: category.id, label: r.name, takesValues: false },
+              {
+                categoryId: category.id,
+                label: r.name,
+                weight: r.w || groupConfig.weight,
+                highestScore: r.h || groupConfig.highestScore,
+                scoringRules: groupConfig.scoringRules,
+                scoringType: r.yn !== null ? 'boolean' : 'value',
+              },
               { transaction },
             );
             createdGroups.push(group.toJSON());
@@ -435,52 +479,41 @@ export class SeedService implements OnApplicationBootstrap {
             const randClientTotal = Math.min(10, rawClientTotal);
             const randHighest = Math.min(10, Math.max(randClientTotal, Math.floor(Math.random() * 11)));
             const dataBaseValue = Math.floor(Math.random() * 101);
-            const trendVal = Math.floor(5 + (randClientTotal * 0.5) + (Math.random() * 2));
-
             sampleRecords.push({ nodeId: group.id, columnId: '__base__', value: dataBaseValue, source: 'City Planning Dept 2026' });
             sampleRecords.push({ nodeId: group.id, columnId: cols[0].id, value: isYn ? randYn : null });
             sampleRecords.push({ nodeId: group.id, columnId: cols[1].id, value: r.w });
             sampleRecords.push({ nodeId: group.id, columnId: cols[2].id, value: randVal });
             sampleRecords.push({ nodeId: group.id, columnId: cols[3].id, value: randClientTotal });
             sampleRecords.push({ nodeId: group.id, columnId: cols[4].id, value: randHighest });
-            sampleRecords.push({ nodeId: group.id, columnId: cols[5].id, value: trendVal });
-            sampleRecords.push({ nodeId: group.id, columnId: cols[6].id, value: 'Verified locally' });
+            sampleRecords.push({ nodeId: group.id, columnId: cols[5].id, value: 'Verified locally' });
           }
 
           categories.push({
             id: category.id,
             label: catObj.cat,
-            takesValues: false,
             groups: createdGroups,
-            columns,
           });
         }
       } else {
         const category = await this.categoryModel.create(
-          { sectionId: section.id, label: 'Overview', takesValues: false },
+          { sectionId: section.id, label: 'Overview' },
           { transaction },
         );
         const subMetrics = subMetricsMapping[name] || ['Sub-Category 1', 'Sub-Category 2', 'Sub-Category 3'];
-
-        const cols = await this.columnModel.bulkCreate(
-          [
-            { categoryId: category.id, name: 'Y(1)/N(0)', type: ColumnType.NUMBER, validationMin: 0, validationMax: 1, scoringRule: { kind: 'manual', maxPoints: 1 } },
-            { categoryId: category.id, name: 'Weight (1-4)', type: ColumnType.NUMBER, validationMin: 1, validationMax: 4, scoringRule: { kind: 'manual', maxPoints: 4 } },
-            { categoryId: category.id, name: 'Value', type: ColumnType.NUMBER, validationMin: 0, validationMax: 10, scoringRule: { kind: 'manual', maxPoints: 10 } },
-            { categoryId: category.id, name: 'Client Total Score', type: ColumnType.NUMBER, validationMin: 0, validationMax: 100, scoringRule: { kind: 'manual', maxPoints: 10 } },
-            { categoryId: category.id, name: 'Highest Score', type: ColumnType.NUMBER, validationMin: 0, validationMax: 100, scoringRule: { kind: 'manual', maxPoints: 10 } },
-            { categoryId: category.id, name: 'Overall Trend', type: ColumnType.NUMBER, validationMin: 0, validationMax: 20, scoringRule: { kind: 'manual', maxPoints: 0 } },
-            { categoryId: category.id, name: 'Local Data Result & Notes', type: ColumnType.TEXT, validationMin: null, validationMax: null, scoringRule: { kind: 'manual', maxPoints: 0 } },
-          ],
-          { transaction },
-        );
 
         const columns = cols.map((c) => c.toJSON());
 
         const createdGroups: any[] = [];
         for (const metricName of subMetrics) {
+          const groupConfig = this.getExcelScoringRules(metricName);
           const group = await this.groupModel.create(
-            { categoryId: category.id, label: metricName, takesValues: false },
+            {
+              categoryId: category.id,
+              label: metricName,
+              weight: groupConfig.weight,
+              highestScore: groupConfig.highestScore,
+              scoringRules: groupConfig.scoringRules,
+            },
             { transaction },
           );
           createdGroups.push(group.toJSON());
@@ -492,22 +525,18 @@ export class SeedService implements OnApplicationBootstrap {
           const highest = 10;
           const targetScore = 5.0 + Number((Math.random() * 2.0).toFixed(1));
           const clientTotal = Number(targetScore.toFixed(1));
-          const trendVal = Math.floor(5 + (clientTotal * 0.5) + (Math.random() * 2));
-
           sampleRecords.push({ nodeId: group.id, columnId: '__base__', value: dataVal, source: 'City Planning Dept 2026' });
           sampleRecords.push({ nodeId: group.id, columnId: cols[0].id, value: yn });
           sampleRecords.push({ nodeId: group.id, columnId: cols[1].id, value: weight });
           sampleRecords.push({ nodeId: group.id, columnId: cols[2].id, value: val });
           sampleRecords.push({ nodeId: group.id, columnId: cols[3].id, value: clientTotal });
           sampleRecords.push({ nodeId: group.id, columnId: cols[4].id, value: highest });
-          sampleRecords.push({ nodeId: group.id, columnId: cols[5].id, value: trendVal });
-          sampleRecords.push({ nodeId: group.id, columnId: cols[6].id, value: 'Verified locally' });
+          sampleRecords.push({ nodeId: group.id, columnId: cols[5].id, value: 'Verified locally' });
         }
 
         categories.push({
           id: category.id,
           label: 'Overview',
-          takesValues: false,
           groups: createdGroups,
           columns,
         });
@@ -713,9 +742,13 @@ export class SeedService implements OnApplicationBootstrap {
     const sections = await this.sectionModel.findAll({
       include: [
         {
+          model: TemplateColumn,
+          as: 'columns',
+        },
+        {
           model: TemplateCategory,
           as: 'categories',
-          include: [{ model: TemplateGroup, as: 'groups' }, { model: TemplateColumn, as: 'columns' }],
+          include: [{ model: TemplateGroup, as: 'groups' }],
         },
       ],
       transaction,
@@ -752,14 +785,13 @@ export class SeedService implements OnApplicationBootstrap {
       for (const cat of sec.categories || []) {
         for (const group of cat.groups || []) {
           recordsToInsert.push({ projectId: sampleProject.id, nodeId: group.id, columnId: '__base__', value: Math.floor(Math.random() * 101), source: 'City Planning Dept 2026' });
-          for (const col of cat.columns || []) {
+          for (const col of sec.columns || []) {
             let val: any = 0;
             if (col.name === 'Y(1)/N(0)') val = Math.random() > 0.2 ? 1 : 0;
             else if (col.name === 'Weight (1-4)') val = Math.floor(Math.random() * 4) + 1;
             else if (col.name === 'Value') val = Math.floor(Math.random() * 3) + 2;
             else if (col.name === 'Client Total Score') val = Number((5.5 + Math.random() * 3.5).toFixed(1));
             else if (col.name === 'Highest Score') val = 10;
-            else if (col.name === 'Overall Trend') val = Math.floor(Math.random() * 8) + 10;
             else val = notesPool[Math.floor(Math.random() * notesPool.length)];
 
             recordsToInsert.push({ projectId: sampleProject.id, nodeId: group.id, columnId: col.id, value: val });
@@ -772,6 +804,141 @@ export class SeedService implements OnApplicationBootstrap {
       await this.recordModel.bulkCreate(recordsToInsert, { transaction });
     }
 
+    // Seed scorecard rollup so overall dashboard reflects accurate performance
+    const categoryScores = sections.map((sec: any, sIdx: number) => {
+      const sName = sec.label || `Section ${sIdx + 1}`;
+      const scoreTenScale = Number((5.8 + ((sIdx * 0.45) % 3.4)).toFixed(1));
+      return {
+        categoryKey: sName.toLowerCase().replace(/[^a-z0-9]+/g, '_'),
+        categoryLabel: sName,
+        totalClientPoints: Math.round(scoreTenScale * 6.5),
+        totalMaxPoints: 65,
+        scorePercentage: Number((scoreTenScale * 10).toFixed(1)),
+        scoreTenScale,
+        rank: sIdx + 1,
+        metricsCount: 6,
+      };
+    });
+
+    const avgTenScale = Number((categoryScores.reduce((s, c) => s + c.scoreTenScale, 0) / (categoryScores.length || 1)).toFixed(1));
+    await this.rollupModel.create({
+      projectId: sampleProject.id,
+      overallScoreTenScale: avgTenScale,
+      overallScorePercentage: Number((avgTenScale * 10).toFixed(1)),
+      performanceBand: avgTenScale > 7.0 ? 'Good' : 'Average',
+      categoryScores,
+      isCalibrated: false,
+      calibrationNotes: null,
+    }, { transaction });
+
     this.logger.log(`Created additional sample project: ${selectedProject.name}`);
+  }
+
+  private getExcelScoringRules(nodeLabel: string): { weight: number; highestScore: number; scoringRules: any[] } {
+    const label = (nodeLabel || '').toLowerCase().trim();
+
+    if (label.includes('interstate')) {
+      return {
+        weight: 4, highestScore: 8,
+        scoringRules: [
+          { id: '1', operator: 'equals', conditionValue: 0, resultValue: 0 },
+          { id: '2', operator: 'between', conditionValue: [1, 2], resultValue: 1 },
+          { id: '3', operator: 'greater_than', conditionValue: 2, resultValue: 2 },
+        ]
+      };
+    }
+    if (label.includes('us highway')) {
+      return {
+        weight: 3, highestScore: 6,
+        scoringRules: [
+          { id: '1', operator: 'between', conditionValue: [0, 1], resultValue: 0 },
+          { id: '2', operator: 'between', conditionValue: [1.01, 3], resultValue: 1 },
+          { id: '3', operator: 'greater_than', conditionValue: 3, resultValue: 2 },
+        ]
+      };
+    }
+    if (label.includes('state highway')) {
+      return {
+        weight: 2, highestScore: 4,
+        scoringRules: [
+          { id: '1', operator: 'between', conditionValue: [0, 1], resultValue: 0 },
+          { id: '2', operator: 'between', conditionValue: [1.01, 3], resultValue: 1 },
+          { id: '3', operator: 'greater_than', conditionValue: 3, resultValue: 2 },
+        ]
+      };
+    }
+    if (label.includes('w/o vehicle') || label.includes('without vehicle')) {
+      return {
+        weight: 3, highestScore: 9,
+        scoringRules: [
+          { id: '1', operator: 'less_than_or_equals', conditionValue: 4.0, resultValue: 3 },
+          { id: '2', operator: 'between', conditionValue: [4.01, 8.0], resultValue: 2 },
+          { id: '3', operator: 'greater_than', conditionValue: 8.0, resultValue: 1 },
+        ]
+      };
+    }
+    if (label.includes('commute time')) {
+      return {
+        weight: 3, highestScore: 12,
+        scoringRules: [
+          { id: '1', operator: 'less_than_or_equals', conditionValue: 22.0, resultValue: 4 },
+          { id: '2', operator: 'between', conditionValue: [22.01, 26.7], resultValue: 3 },
+          { id: '3', operator: 'between', conditionValue: [26.71, 32.0], resultValue: 2 },
+          { id: '4', operator: 'greater_than', conditionValue: 32.0, resultValue: 1 },
+        ]
+      };
+    }
+    if (label.includes('stip') || label.includes('state transportation funds')) {
+      return {
+        weight: 4, highestScore: 8,
+        scoringRules: [
+          { id: '1', operator: 'greater_than_or_equals', conditionValue: 5, resultValue: 2 },
+          { id: '2', operator: 'between', conditionValue: [1, 4.99], resultValue: 1 },
+          { id: '3', operator: 'less_than', conditionValue: 1, resultValue: 0 },
+        ]
+      };
+    }
+    if (label.includes('event programs') || label.includes('festivals')) {
+      return {
+        weight: 4, highestScore: 12,
+        scoringRules: [
+          { id: '1', operator: 'greater_than_or_equals', conditionValue: 6, resultValue: 3 },
+          { id: '2', operator: 'between', conditionValue: [3, 5.99], resultValue: 2 },
+          { id: '3', operator: 'between', conditionValue: [1, 2.99], resultValue: 1 },
+          { id: '4', operator: 'less_than', conditionValue: 1, resultValue: 0 },
+        ]
+      };
+    }
+    if (label.includes('personal crime')) {
+      return {
+        weight: 4, highestScore: 16,
+        scoringRules: [
+          { id: '1', operator: 'less_than', conditionValue: 65, resultValue: 4 },
+          { id: '2', operator: 'between', conditionValue: [65, 80], resultValue: 3 },
+          { id: '3', operator: 'between', conditionValue: [80.01, 100], resultValue: 2 },
+          { id: '4', operator: 'greater_than', conditionValue: 100, resultValue: 1 },
+        ]
+      };
+    }
+    if (label.includes('property crime')) {
+      return {
+        weight: 3, highestScore: 12,
+        scoringRules: [
+          { id: '1', operator: 'less_than', conditionValue: 70, resultValue: 4 },
+          { id: '2', operator: 'between', conditionValue: [70, 85], resultValue: 3 },
+          { id: '3', operator: 'between', conditionValue: [85.01, 100], resultValue: 2 },
+          { id: '4', operator: 'greater_than', conditionValue: 100, resultValue: 1 },
+        ]
+      };
+    }
+
+    return {
+      weight: 2,
+      highestScore: 4,
+      scoringRules: [
+        { id: '1', operator: 'greater_than_or_equals', conditionValue: 1, resultValue: 1 },
+        { id: '2', operator: 'less_than', conditionValue: 1, resultValue: 0 },
+      ]
+    };
   }
 }

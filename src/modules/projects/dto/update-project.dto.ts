@@ -31,4 +31,29 @@ export class UpdateProjectDto {
   @IsOptional()
   @IsObject()
   dashboardLayout?: any;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsArray()
+  assignedSections?: any[];
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  state?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  county?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  stateFips?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  countyFips?: string;
 }

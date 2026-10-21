@@ -21,9 +21,10 @@ export class RatingBandDto {
 }
 
 export class UpdateSettingsDto {
-  @ApiProperty({ example: 'Rose Associates' })
+  @ApiProperty({ example: 'Rose Associates', required: false })
+  @IsOptional()
   @IsString()
-  companyName: string;
+  companyName?: string;
 
   @ApiProperty({ required: false })
   @IsOptional()
@@ -40,9 +41,27 @@ export class UpdateSettingsDto {
   @IsString()
   companyPhone?: string;
 
-  @ApiProperty({ type: [RatingBandDto] })
+  @ApiProperty({ required: false })
+  @IsOptional()
+  companyProfile?: {
+    name?: string;
+    logoUrl?: string;
+    address?: string;
+    phone?: string;
+  };
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  planPrices?: {
+    reportPrice: number;
+    subscriptionPrice: number;
+    combinedPrice: number;
+  };
+
+  @ApiProperty({ type: [RatingBandDto], required: false })
+  @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => RatingBandDto)
-  ratingBands: RatingBandDto[];
+  ratingBands?: RatingBandDto[];
 }

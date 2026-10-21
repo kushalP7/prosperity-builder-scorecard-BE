@@ -8,6 +8,7 @@ export enum ApiDataSource {
   EPA = 'EPA',
   NCDOT_GIS = 'NCDOT_GIS',
   NC_DPI = 'NC_DPI',
+  CDC_PLACES = 'CDC_PLACES',
 }
 
 @Table({ tableName: 'ExternalDataStaging', timestamps: true })

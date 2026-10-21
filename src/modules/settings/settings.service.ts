@@ -26,6 +26,11 @@ export class SettingsService {
             companyName: 'Rose Associates',
             companyAddress: '123 Planning Way',
             companyPhone: '555-0100',
+            planPrices: {
+              reportPrice: 15000,
+              subscriptionPrice: 36000,
+              combinedPrice: 48000,
+            },
           },
           { transaction },
         );
@@ -49,6 +54,14 @@ export class SettingsService {
         await transaction.rollback();
         throw error;
       }
+    } else if (!settings.planPrices) {
+      await settings.update({
+        planPrices: {
+          reportPrice: 15000,
+          subscriptionPrice: 36000,
+          combinedPrice: 48000,
+        },
+      });
     }
 
     return settings;
@@ -58,24 +71,30 @@ export class SettingsService {
     const settings = await this.getSettings();
     const transaction = await this.sequelize.transaction();
 
+    const companyName = dto.companyName || dto.companyProfile?.name || settings.companyName;
+    const companyLogoUrl = dto.companyLogoUrl !== undefined ? dto.companyLogoUrl : (dto.companyProfile?.logoUrl !== undefined ? dto.companyProfile.logoUrl : settings.companyLogoUrl);
+    const companyAddress = dto.companyAddress !== undefined ? dto.companyAddress : (dto.companyProfile?.address !== undefined ? dto.companyProfile.address : settings.companyAddress);
+    const companyPhone = dto.companyPhone !== undefined ? dto.companyPhone : (dto.companyProfile?.phone !== undefined ? dto.companyProfile.phone : settings.companyPhone);
+
     try {
       await settings.update(
         {
-          companyName: dto.companyName,
-          companyLogoUrl: dto.companyLogoUrl,
-          companyAddress: dto.companyAddress,
-          companyPhone: dto.companyPhone,
+          companyName,
+          companyLogoUrl,
+          companyAddress,
+          companyPhone,
+          ...(dto.planPrices ? { planPrices: dto.planPrices } : {}),
         },
         { transaction },
       );
 
-      // Re-create rating bands
-      await this.ratingBandModel.destroy({
-        where: { settingsId: settings.id },
-        transaction,
-      });
-
+      // Re-create rating bands if provided in update
       if (dto.ratingBands && dto.ratingBands.length > 0) {
+        await this.ratingBandModel.destroy({
+          where: { settingsId: settings.id },
+          transaction,
+        });
+
         await this.ratingBandModel.bulkCreate(
           dto.ratingBands.map((band) => ({
             settingsId: settings.id,

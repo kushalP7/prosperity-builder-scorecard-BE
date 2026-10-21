@@ -8,6 +8,7 @@ import { ScorecardRollup } from '../../engine/entities/scorecard-rollup.entity';
 export enum ProjectStatus {
   ONBOARDING = 'ONBOARDING',
   INTAKE_PENDING = 'INTAKE_PENDING',
+  INTAKE_SUBMITTED = 'INTAKE_SUBMITTED',
   INGESTION_RUNNING = 'INGESTION_RUNNING',
   CALCULATED = 'CALCULATED',
   IN_REVIEW = 'IN_REVIEW',
@@ -32,12 +33,24 @@ export class Project extends Model {
   @Column({ type: DataType.STRING, defaultValue: 'COUNTY' })
   jurisdictionType: string;
 
+  @Column({ type: DataType.STRING, defaultValue: 'North Carolina' })
+  state: string;
+
+  @Column({ type: DataType.STRING, defaultValue: 'Lee County' })
+  county: string;
+
+  @Column({ type: DataType.STRING, defaultValue: '37' })
+  stateFips: string;
+
+  @Column({ type: DataType.STRING, defaultValue: '105' })
+  countyFips: string;
+
   @Column({ type: DataType.INTEGER, allowNull: false })
   year: number;
 
-  @Column({ 
-    type: DataType.ENUM(...Object.values(ProjectStatus)), 
-    defaultValue: ProjectStatus.INTAKE_PENDING 
+  @Column({
+    type: DataType.ENUM(...Object.values(ProjectStatus)),
+    defaultValue: ProjectStatus.INTAKE_PENDING
   })
   status: ProjectStatus;
 
@@ -50,7 +63,7 @@ export class Project extends Model {
   @Column({ type: DataType.BOOLEAN, defaultValue: true })
   bypassPayments: boolean;
 
-  @Column({ type: DataType.STRING, allowNull: true })
+  @Column({ type: DataType.TEXT, allowNull: true })
   image: string;
 
   @Column({ type: DataType.JSONB, defaultValue: [] })
@@ -61,6 +74,12 @@ export class Project extends Model {
 
   @Column({ type: DataType.JSONB, allowNull: true })
   dashboardLayout: any;
+
+  @Column({ type: DataType.BOOLEAN, defaultValue: false })
+  deleted: boolean;
+
+  @Column({ type: DataType.DATE, allowNull: true, defaultValue: null })
+  deletedAt: Date | null;
 
   @HasMany(() => ProjectDataRecord, { onDelete: 'CASCADE' })
   records: ProjectDataRecord[];
