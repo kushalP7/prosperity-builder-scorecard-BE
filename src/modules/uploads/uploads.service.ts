@@ -26,39 +26,56 @@ export class UploadsService {
       this.activeProvider = this.s3Provider;
     }
 
-    this.logger.log(`Active storage driver: "${this.driver}"`);
+    this.logger.log(`Active storage driver: "${this.driver}", environment prefix: "${this.getEnvPrefix()}"`);
   }
 
   getActiveDriver(): string {
     return this.driver;
   }
 
+  getEnvPrefix(): string {
+    const envPrefix = (process.env.STORAGE_ENV_PREFIX || '').trim();
+    if (envPrefix) {
+      return envPrefix;
+    }
+    return (process.env.NODE_ENV || '').toLowerCase() === 'production' ? 'prod' : 'dev';
+  }
+
   resolveFolderPath(category: string = 'reports'): string {
+    const envPrefix = this.getEnvPrefix();
     const raw = (category || 'reports').trim();
     const normalized = raw.toLowerCase();
 
-    if (normalized.includes('audio')) {
-      return 'Rose/Media/Audio';
-    }
-    if (normalized.includes('video')) {
-      return 'Rose/Media/Video';
-    }
-    if (normalized.includes('pdf')) {
-      return 'Rose/Media/PDF';
-    }
-    if (normalized.includes('media')) {
-      return 'Rose/Media';
-    }
-    if (normalized.includes('report')) {
-      return 'Rose/Reports';
-    }
-    if (normalized.includes('project')) {
-      return 'Rose/Project_Partners';
-    }
-    if (raw.startsWith('Rose/')) {
+    // If it already starts with Rose/<envPrefix>/, return as is
+    if (raw.startsWith(`Rose/${envPrefix}/`)) {
       return raw;
     }
-    return `Rose/${category}`;
+
+    // If it starts with Rose/ (e.g. legacy Rose/Reports or Rose/Media), inject the envPrefix
+    if (raw.startsWith('Rose/')) {
+      return raw.replace(/^Rose\//, `Rose/${envPrefix}/`);
+    }
+
+    let subPath = 'Reports';
+    if (normalized.includes('audio')) {
+      subPath = 'Media/Audio';
+    } else if (normalized.includes('video')) {
+      subPath = 'Media/Video';
+    } else if (normalized.includes('pdf')) {
+      subPath = 'Media/PDF';
+    } else if (normalized.includes('media')) {
+      subPath = 'Media';
+    } else if (normalized.includes('report')) {
+      subPath = 'Reports';
+    } else if (normalized.includes('project')) {
+      subPath = 'Project_Partners';
+    } else if (normalized.includes('logo')) {
+      subPath = 'logo';
+    } else {
+      subPath = raw.replace(/^\/+|\/+$/g, '');
+    }
+
+    return `Rose/${envPrefix}/${subPath}`;
   }
 
   isManagedUrl(url: string): boolean {
@@ -72,13 +89,14 @@ export class UploadsService {
 
   async uploadFile(
     file: Express.Multer.File,
-    folder: string = 'Rose/Reports',
+    folder?: string,
     resourceType: 'auto' | 'image' | 'raw' | 'video' = 'auto',
   ): Promise<StorageUploadResult> {
     if (!file) {
       throw new BadRequestException('No file provided');
     }
-    return this.activeProvider.uploadFile(file, folder, resourceType);
+    const resolvedFolder = this.resolveFolderPath(folder || 'reports');
+    return this.activeProvider.uploadFile(file, resolvedFolder, resourceType);
   }
 
   async deleteFileByUrl(url: string): Promise<{ success: boolean; result?: string }> {
