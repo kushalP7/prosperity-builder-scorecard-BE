@@ -851,9 +851,46 @@ export class ScorecardCalcService {
       }
     }
 
-    // Upsert all calculated records into database
-    for (const rec of recordsToUpsert) {
-      await this.recordModel.upsert(rec);
+    // Postgres bulk upsert — one statement per chunk (major calc speedup)
+    if (recordsToUpsert.length > 0) {
+      const sequelize = this.recordModel.sequelize;
+      const CHUNK = 80;
+      for (let i = 0; i < recordsToUpsert.length; i += CHUNK) {
+        const chunk = recordsToUpsert.slice(i, i + CHUNK);
+        if (!sequelize) {
+          await Promise.all(chunk.map((rec) => this.recordModel.upsert(rec)));
+          continue;
+        }
+        const placeholders: string[] = [];
+        const replacements: any[] = [];
+        chunk.forEach((rec) => {
+          placeholders.push(`(gen_random_uuid(), ?, ?, ?, ?::jsonb, ?, ?, ?, NOW(), NOW())`);
+          replacements.push(
+            rec.projectId,
+            rec.nodeId,
+            rec.columnId,
+            JSON.stringify(rec.value ?? null),
+            rec.source ?? null,
+            rec.notes ?? null,
+            rec.scoreValue ?? null,
+          );
+        });
+        await sequelize.query(
+          `
+          INSERT INTO "ProjectDataRecords"
+            ("id", "projectId", "nodeId", "columnId", "value", "source", "notes", "scoreValue", "createdAt", "updatedAt")
+          VALUES ${placeholders.join(', ')}
+          ON CONFLICT ("projectId", "nodeId", "columnId")
+          DO UPDATE SET
+            "value" = EXCLUDED."value",
+            "source" = COALESCE(EXCLUDED."source", "ProjectDataRecords"."source"),
+            "notes" = COALESCE(EXCLUDED."notes", "ProjectDataRecords"."notes"),
+            "scoreValue" = EXCLUDED."scoreValue",
+            "updatedAt" = NOW()
+          `,
+          { replacements },
+        );
+      }
     }
 
     // Now recalculate ScorecardRollup from real calculated rows strictly for assigned sections

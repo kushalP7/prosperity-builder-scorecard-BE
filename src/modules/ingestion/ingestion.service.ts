@@ -38,13 +38,73 @@ export class IngestionService {
     }
   }
 
+  /**
+   * Postgres bulk upsert via ON CONFLICT (projectId, nodeId, columnId).
+   * One SQL statement per chunk instead of N round-trips.
+   */
+  private async bulkUpsertRecords(records: Array<Record<string, any>>): Promise<void> {
+    if (!records.length) return;
+    const sequelize = this.recordModel.sequelize;
+    if (!sequelize) {
+      await Promise.all(records.map((rec) => this.recordModel.upsert(rec)));
+      return;
+    }
+
+    const CHUNK = 80;
+    for (let i = 0; i < records.length; i += CHUNK) {
+      const chunk = records.slice(i, i + CHUNK);
+      const placeholders: string[] = [];
+      const replacements: any[] = [];
+
+      chunk.forEach((rec) => {
+        placeholders.push(`(gen_random_uuid(), ?, ?, ?, ?::jsonb, ?, ?, ?, NOW(), NOW())`);
+        replacements.push(
+          rec.projectId,
+          rec.nodeId,
+          rec.columnId,
+          JSON.stringify(rec.value ?? null),
+          rec.source ?? null,
+          rec.notes ?? null,
+          rec.scoreValue ?? null,
+        );
+      });
+
+      await sequelize.query(
+        `
+        INSERT INTO "ProjectDataRecords"
+          ("id", "projectId", "nodeId", "columnId", "value", "source", "notes", "scoreValue", "createdAt", "updatedAt")
+        VALUES ${placeholders.join(', ')}
+        ON CONFLICT ("projectId", "nodeId", "columnId")
+        DO UPDATE SET
+          "value" = EXCLUDED."value",
+          "source" = COALESCE(EXCLUDED."source", "ProjectDataRecords"."source"),
+          "notes" = COALESCE(EXCLUDED."notes", "ProjectDataRecords"."notes"),
+          "scoreValue" = EXCLUDED."scoreValue",
+          "updatedAt" = NOW()
+        `,
+        { replacements },
+      );
+    }
+  }
+
   async triggerIngestion(projectId: string): Promise<{
     success: boolean;
     stagedCount: number;
     populatedMatrixCount?: number;
     calculatedRows?: number;
     overallScore?: number;
+    durationMs?: number;
+    stagedRecords?: Array<{
+      source: string;
+      metricLabel: string;
+      metricKey: string;
+      categoryKey: string;
+      extractedValue: number | null;
+      unit?: string;
+      ingestionStatus?: string;
+    }>;
   }> {
+    const tAll0 = Date.now();
     const project = await this.projectModel.findByPk(projectId);
     if (!project) throw new NotFoundException(`Project ${projectId} not found`);
 
@@ -120,6 +180,93 @@ export class IngestionService {
     const countyName = project.county || 'Lee County';
 
     // ----------------------------------------------------
+    // PARALLEL LIVE FETCHES — Census + BLS + EPA + CDC
+    // (independent network calls; await together for latency win)
+    // ----------------------------------------------------
+    const censusVars = [
+      'NAME',
+      'DP03_0062E',
+      'DP03_0063E',
+      'DP03_0088E',
+      'DP03_0002PE',
+      'DP03_0033PE',
+      'DP03_0040PE',
+      'DP03_0039PE',
+      'DP03_0119PE',
+      'DP04_0058PE',
+      'DP04_0089E',
+      'DP04_0134E',
+      'DP04_0047PE',
+      'DP04_0017PE',
+      'DP02_0067PE',
+      'DP02_0068PE',
+      'DP02_0066PE',
+    ];
+    const censusUrl = censusKey
+      ? `https://api.census.gov/data/2022/acs/acs5/profile?get=${censusVars.join(',')}&for=county:${countyFips}&in=state:${stateFips}&key=${censusKey}`
+      : `https://api.census.gov/data/2022/acs/acs5/profile?get=${censusVars.join(',')}&for=county:${countyFips}&in=state:${stateFips}`;
+
+    const blsSeriesId = `LAUCN${stateFips.padStart(2, '0')}${countyFips}00000003`;
+    const blsEndpoint = blsKey
+      ? 'https://api.bls.gov/publicAPI/v2/timeseries/data/'
+      : 'https://api.bls.gov/publicAPI/v1/timeseries/data/';
+    const blsPayload: any = {
+      seriesid: [blsSeriesId],
+      startyear: '2023',
+      endyear: '2024',
+    };
+    if (blsKey) blsPayload.registrationkey = blsKey;
+
+    const epaUrl = `https://aqs.epa.gov/data/api/annualData/byCounty?email=${epaEmail}&key=${epaKey}&param=44201&bdate=20220101&edate=20221231&state=${stateFips}&county=${countyFips}`;
+    const fullCountyFips = `${stateFips}${countyFips}`;
+    const cdcAuth = cdcKeyId && cdcKeySecret ? Buffer.from(`${cdcKeyId}:${cdcKeySecret}`).toString('base64') : null;
+    const cdcUrl = `https://chronicdata.cdc.gov/resource/cwsq-ngmh.json?$limit=50&countyfips=${fullCountyFips}`;
+
+    // Fail-fast timeouts: Promise.all is gated by the slowest call.
+    // Prefer benchmark fallback over waiting 8–10s on a hung third-party.
+    const LIVE_TIMEOUT_MS = 3500;
+    const geoUrl = arcgisToken
+      ? `https://geocode-api.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates?f=json&singleLine=${encodeURIComponent(countyName + ', ' + stateName)}&token=${arcgisToken}`
+      : null;
+
+    this.logger.log(`Parallel live API fetch starting for ${countyName}, ${stateName} (Census, BLS, EPA, CDC, ArcGIS geo; ${LIVE_TIMEOUT_MS}ms cap)...`);
+    const tFetch0 = Date.now();
+
+    const [cRes, blsRes, epaRes, cdcRes, geoResEarly] = await Promise.all([
+      this.fetchWithTimeout(censusUrl, {}, LIVE_TIMEOUT_MS).catch((err: any) => {
+        this.logger.warn(`Census API live fetch note: ${err.message}. Using validated county ACS baseline.`);
+        return null as Response | null;
+      }),
+      this.fetchWithTimeout(blsEndpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(blsPayload),
+      }, LIVE_TIMEOUT_MS).catch((err: any) => {
+        this.logger.warn(`BLS API fetch note: ${err.message}. Using county LAUS benchmark.`);
+        return null as Response | null;
+      }),
+      this.fetchWithTimeout(epaUrl, {}, LIVE_TIMEOUT_MS).catch((err: any) => {
+        this.logger.warn(`EPA API live fetch error: ${err.message}. Using EPA benchmark.`);
+        return null as Response | null;
+      }),
+      cdcAuth
+        ? this.fetchWithTimeout(cdcUrl, {
+            headers: { Authorization: `Basic ${cdcAuth}`, Accept: 'application/json' },
+          }, LIVE_TIMEOUT_MS).catch((err: any) => {
+            this.logger.warn(`CDC PLACES API fetch note: ${err.message}. Using validated county health baselines.`);
+            return null as Response | null;
+          })
+        : Promise.resolve(null as Response | null),
+      geoUrl
+        ? this.fetchWithTimeout(geoUrl, {}, LIVE_TIMEOUT_MS).catch((err: any) => {
+            this.logger.warn(`ArcGIS geocode note: ${err.message}`);
+            return null as Response | null;
+          })
+        : Promise.resolve(null as Response | null),
+    ]);
+    this.logger.log(`Parallel live API fetches finished in ${Date.now() - tFetch0}ms`);
+
+    // ----------------------------------------------------
     // 1. LIVE US CENSUS BUREAU ACS 5-YEAR DATA PROFILES
     // ----------------------------------------------------
     let medianHhIncome = 60941;
@@ -140,33 +287,7 @@ export class IngestionService {
     let censusIsLive = false;
 
     try {
-      this.logger.log(`Fetching US Census ACS 5-Year Data Profiles for State ${stateFips} County ${countyFips} (${countyName}, ${stateName})...`);
-      const vars = [
-        'NAME',
-        'DP03_0062E', // Median HH Income
-        'DP03_0063E', // Mean HH Income
-        'DP03_0088E', // Per Capita Income
-        'DP03_0002PE', // Labor Force Participation Rate
-        'DP03_0033PE', // % Retail Trade
-        'DP03_0040PE', // % Arts, Entertainment, Recreation, Food
-        'DP03_0039PE', // % Healthcare and Social Assistance
-        'DP03_0119PE', // % Families Below Poverty
-        'DP04_0058PE', // % HH Without Vehicle
-        'DP04_0089E', // Median Home Value
-        'DP04_0134E', // Median Gross Rent
-        'DP04_0047PE', // % Renter-Occupied Housing Units
-        'DP04_0017PE', // % Built 2020 or later
-        'DP02_0067PE', // % High School Graduate or Higher
-        'DP02_0068PE', // % Bachelor's Degree or Higher
-        'DP02_0066PE', // % Associates Degree
-      ];
-
-      const censusUrl = censusKey
-        ? `https://api.census.gov/data/2022/acs/acs5/profile?get=${vars.join(',')}&for=county:${countyFips}&in=state:${stateFips}&key=${censusKey}`
-        : `https://api.census.gov/data/2022/acs/acs5/profile?get=${vars.join(',')}&for=county:${countyFips}&in=state:${stateFips}`;
-
-      const cRes = await this.fetchWithTimeout(censusUrl, {}, 8000);
-      if (cRes.ok) {
+      if (cRes?.ok) {
         const cJson = await cRes.json();
         if (Array.isArray(cJson) && cJson.length > 1) {
           const headers: string[] = cJson[0];
@@ -198,7 +319,7 @@ export class IngestionService {
         }
       }
     } catch (err: any) {
-      this.logger.warn(`Census API live fetch note: ${err.message}. Using validated county ACS baseline.`);
+      this.logger.warn(`Census API parse note: ${err.message}. Using validated county ACS baseline.`);
     }
 
     // Always push Census records (either live or validated baseline)
@@ -371,37 +492,14 @@ export class IngestionService {
     );
 
     // ----------------------------------------------------
-    // 2. LIVE BUREAU OF LABOR STATISTICS (BLS)
-    // Uses Public v1 (No Key Required) or v2 (With Key)
+    // 2. LIVE BUREAU OF LABOR STATISTICS (BLS) — from parallel fetch
     // ----------------------------------------------------
     let unempRate = 3.3;
     let blsIsLive = false;
     let blsPeriod = '2024';
 
     try {
-      const blsSeriesId = `LAUCN${stateFips.padStart(2, '0')}${countyFips}00000003`;
-      const blsEndpoint = blsKey
-        ? 'https://api.bls.gov/publicAPI/v2/timeseries/data/'
-        : 'https://api.bls.gov/publicAPI/v1/timeseries/data/';
-
-      this.logger.log(`Fetching live BLS Unemployment Statistics via ${blsKey ? 'v2 (Registered)' : 'v1 (Zero-Key Public)'} for series ${blsSeriesId}...`);
-
-      const blsPayload: any = {
-        seriesid: [blsSeriesId],
-        startyear: '2023',
-        endyear: '2024',
-      };
-      if (blsKey) {
-        blsPayload.registrationkey = blsKey;
-      }
-
-      const blsRes = await this.fetchWithTimeout(blsEndpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(blsPayload),
-      }, 5000);
-
-      if (blsRes.ok) {
+      if (blsRes?.ok) {
         const blsJson = await blsRes.json();
         const latestItem = blsJson?.Results?.series?.[0]?.data?.[0];
         if (latestItem && latestItem.value) {
@@ -412,7 +510,7 @@ export class IngestionService {
         }
       }
     } catch (err: any) {
-      this.logger.warn(`BLS API fetch note: ${err.message}. Using county LAUS benchmark.`);
+      this.logger.warn(`BLS API parse note: ${err.message}. Using county LAUS benchmark.`);
     }
 
     recordsToInsert.push({
@@ -433,13 +531,10 @@ export class IngestionService {
     });
 
     // ----------------------------------------------------
-    // 3. LIVE EPA AIRDATA AQS API
+    // 3. LIVE EPA AIRDATA AQS API — from parallel fetch
     // ----------------------------------------------------
     try {
-      this.logger.log(`Fetching live EPA AirData AQS annual monitor records for state ${stateFips} county ${countyFips}...`);
-      const epaUrl = `https://aqs.epa.gov/data/api/annualData/byCounty?email=${epaEmail}&key=${epaKey}&param=44201&bdate=20220101&edate=20221231&state=${stateFips}&county=${countyFips}`;
-      const epaRes = await this.fetchWithTimeout(epaUrl, {}, 10000);
-      if (epaRes.ok) {
+      if (epaRes?.ok) {
         const epaJson = await epaRes.json();
         const firstRecord = epaJson?.Data?.[0];
         const ozoneMean = firstRecord?.arithmetic_mean ? Number((firstRecord.arithmetic_mean * 1000).toFixed(1)) : 44.8;
@@ -457,7 +552,7 @@ export class IngestionService {
           ingestionStatus: 'FETCHED',
         });
       } else {
-        throw new Error(`EPA response status: ${epaRes.status}`);
+        throw new Error(epaRes ? `EPA response status: ${epaRes.status}` : 'EPA fetch failed');
       }
     } catch (err: any) {
       this.logger.warn(`EPA API live fetch error: ${err.message}. Using EPA benchmark.`);
@@ -470,12 +565,12 @@ export class IngestionService {
         extractedValue: 92.4,
         unit: '%',
         rawResponse: { source: 'EPA AirData Annual Summary Report', good_pct: 92.4, median_aqi: 38 },
-        ingestionStatus: 'FETCHED',
+        ingestionStatus: 'BENCHMARK',
       });
     }
 
     // ----------------------------------------------------
-    // 3B. LIVE CDC PLACES (HEALTHCARE & WELLNESS)
+    // 3B. LIVE CDC PLACES — from parallel fetch
     // ----------------------------------------------------
     let cdcUninsured = 14.7;
     let cdcFairPoorHealth = 22.6;
@@ -483,38 +578,25 @@ export class IngestionService {
     let cdcRoutineCheckup = 78.1;
     let cdcLive = false;
 
-    if (cdcKeyId && cdcKeySecret) {
-      try {
-        const fullCountyFips = `${stateFips}${countyFips}`;
-        this.logger.log(`Fetching live CDC PLACES data for county FIPS ${fullCountyFips} (${countyName}, ${stateName})...`);
-        const cdcAuth = Buffer.from(`${cdcKeyId}:${cdcKeySecret}`).toString('base64');
-        const cdcUrl = `https://chronicdata.cdc.gov/resource/cwsq-ngmh.json?$limit=50&countyfips=${fullCountyFips}`;
-        const cdcRes = await this.fetchWithTimeout(cdcUrl, {
-          headers: {
-            'Authorization': `Basic ${cdcAuth}`,
-            'Accept': 'application/json',
-          },
-        }, 5000);
-
-        if (cdcRes.ok) {
-          const cdcList = await cdcRes.json();
-          if (Array.isArray(cdcList) && cdcList.length > 0) {
-            cdcLive = true;
-            for (const item of cdcList) {
-              const m = (item.measure || '').toLowerCase();
-              const val = Number(item.data_value);
-              if (isNaN(val)) continue;
-              if (m.includes('lack of health insurance')) cdcUninsured = val;
-              else if (m.includes('fair or poor')) cdcFairPoorHealth = val;
-              else if (m.includes('food insecurity')) cdcFoodInsecurity = val;
-              else if (m.includes('routine checkup')) cdcRoutineCheckup = val;
-            }
-            this.logger.log(`CDC PLACES live fetch successful. Uninsured: ${cdcUninsured}%, Fair/Poor Health: ${cdcFairPoorHealth}%, Food Insecurity: ${cdcFoodInsecurity}%, Routine Checkup: ${cdcRoutineCheckup}%`);
+    try {
+      if (cdcRes?.ok) {
+        const cdcList = await cdcRes.json();
+        if (Array.isArray(cdcList) && cdcList.length > 0) {
+          cdcLive = true;
+          for (const item of cdcList) {
+            const m = (item.measure || '').toLowerCase();
+            const val = Number(item.data_value);
+            if (isNaN(val)) continue;
+            if (m.includes('lack of health insurance')) cdcUninsured = val;
+            else if (m.includes('fair or poor')) cdcFairPoorHealth = val;
+            else if (m.includes('food insecurity')) cdcFoodInsecurity = val;
+            else if (m.includes('routine checkup')) cdcRoutineCheckup = val;
           }
+          this.logger.log(`CDC PLACES live fetch successful. Uninsured: ${cdcUninsured}%, Fair/Poor Health: ${cdcFairPoorHealth}%, Food Insecurity: ${cdcFoodInsecurity}%, Routine Checkup: ${cdcRoutineCheckup}%`);
         }
-      } catch (err: any) {
-        this.logger.warn(`CDC PLACES API fetch note: ${err.message}. Using validated county health baselines.`);
       }
+    } catch (err: any) {
+      this.logger.warn(`CDC PLACES API parse note: ${err.message}. Using validated county health baselines.`);
     }
 
     recordsToInsert.push(
@@ -644,59 +726,51 @@ export class IngestionService {
     if (arcgisToken) {
       try {
         this.logger.log(`Querying live ArcGIS Location Services for ${countyName}, ${stateName}...`);
-        // 1. Geocode Project Coordinates
-        const geoUrl = `https://geocode-api.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates?f=json&singleLine=${encodeURIComponent(countyName + ', ' + stateName)}&token=${arcgisToken}`;
-        const geoRes = await this.fetchWithTimeout(geoUrl, {}, 5000);
+        // Geocode already started in parallel with Census/BLS/EPA/CDC
         let loc = { x: -79.1715, y: 35.4751 };
 
-        if (geoRes.ok) {
-          const geoJson = await geoRes.json();
+        if (geoResEarly?.ok) {
+          const geoJson = await geoResEarly.json();
           if (geoJson?.candidates?.[0]?.location) {
             loc = geoJson.candidates[0].location;
             arcgisLive = true;
           }
         }
 
-        // 2. Query Airports within 50km
-        if (!has('transit_airport_count')) {
-          const airUrl = `https://geocode-api.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates?f=json&location=${loc.x},${loc.y}&distance=50000&category=Airport&maxLocations=5&token=${arcgisToken}`;
-          const airRes = await this.fetchWithTimeout(airUrl, {}, 5000);
-          if (airRes.ok) {
-            const airJson = await airRes.json();
-            if (Array.isArray(airJson?.candidates) && airJson.candidates.length > 0) {
-              arcgisAirports = airJson.candidates.map((c: any) => c.address);
-              airportVal = Math.min(arcgisAirports.length, 3);
-            }
-          }
-        }
-
-        // 3. Query Passenger Train Stations within 50km
-        if (!has('transit_train_count')) {
-          const trainUrl = `https://geocode-api.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates?f=json&location=${loc.x},${loc.y}&distance=50000&category=Train Station&maxLocations=5&token=${arcgisToken}`;
-          const trainRes = await this.fetchWithTimeout(trainUrl, {}, 5000);
-          if (trainRes.ok) {
-            const trainJson = await trainRes.json();
-            if (Array.isArray(trainJson?.candidates) && trainJson.candidates.length > 0) {
-              arcgisTrainStations = trainJson.candidates.map((c: any) => c.address);
-              trainVal = Math.min(arcgisTrainStations.length, 2);
-            }
-          }
-        }
-
-        // 4. Query Public Parks within 30km
+        // 2–5. Parallel POI queries (airports, trains, parks, hospitals)
+        const airUrl = `https://geocode-api.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates?f=json&location=${loc.x},${loc.y}&distance=50000&category=Airport&maxLocations=5&token=${arcgisToken}`;
+        const trainUrl = `https://geocode-api.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates?f=json&location=${loc.x},${loc.y}&distance=50000&category=Train Station&maxLocations=5&token=${arcgisToken}`;
         const parkUrl = `https://geocode-api.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates?f=json&location=${loc.x},${loc.y}&distance=30000&category=Park&maxLocations=10&token=${arcgisToken}`;
-        const parkRes = await this.fetchWithTimeout(parkUrl, {}, 5000);
-        if (parkRes.ok) {
+        const hospUrl = `https://geocode-api.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates?f=json&location=${loc.x},${loc.y}&distance=30000&category=Hospital&maxLocations=10&token=${arcgisToken}`;
+
+        const [airRes, trainRes, parkRes, hospRes] = await Promise.all([
+          !has('transit_airport_count') ? this.fetchWithTimeout(airUrl, {}, 3000) : Promise.resolve(null),
+          !has('transit_train_count') ? this.fetchWithTimeout(trainUrl, {}, 3000) : Promise.resolve(null),
+          this.fetchWithTimeout(parkUrl, {}, 3000),
+          this.fetchWithTimeout(hospUrl, {}, 3000),
+        ]);
+
+        if (airRes?.ok) {
+          const airJson = await airRes.json();
+          if (Array.isArray(airJson?.candidates) && airJson.candidates.length > 0) {
+            arcgisAirports = airJson.candidates.map((c: any) => c.address);
+            airportVal = Math.min(arcgisAirports.length, 3);
+          }
+        }
+        if (trainRes?.ok) {
+          const trainJson = await trainRes.json();
+          if (Array.isArray(trainJson?.candidates) && trainJson.candidates.length > 0) {
+            arcgisTrainStations = trainJson.candidates.map((c: any) => c.address);
+            trainVal = Math.min(arcgisTrainStations.length, 2);
+          }
+        }
+        if (parkRes?.ok) {
           const parkJson = await parkRes.json();
           if (Array.isArray(parkJson?.candidates) && parkJson.candidates.length > 0) {
             arcgisParks = parkJson.candidates.map((c: any) => c.address);
           }
         }
-
-        // 5. Query Hospitals within 30km
-        const hospUrl = `https://geocode-api.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates?f=json&location=${loc.x},${loc.y}&distance=30000&category=Hospital&maxLocations=10&token=${arcgisToken}`;
-        const hospRes = await this.fetchWithTimeout(hospUrl, {}, 5000);
-        if (hospRes.ok) {
+        if (hospRes?.ok) {
           const hospJson = await hospRes.json();
           if (Array.isArray(hospJson?.candidates) && hospJson.candidates.length > 0) {
             arcgisHospitals = hospJson.candidates.map((c: any) => c.address);
@@ -823,7 +897,7 @@ export class IngestionService {
     // 7. AUTO-POPULATE MATRIX (__base__ column)
     // Sourced from Live APIs + Phase 2 Questionnaire
     // ----------------------------------------------------
-    let populatedMatrixCount = 0;
+    const matrixUpserts: Array<Record<string, any>> = [];
 
     for (const section of assignedSections) {
       for (const cat of section.categories || []) {
@@ -1109,7 +1183,7 @@ export class IngestionService {
           }
 
           if (matchedVal !== undefined && !isNaN(matchedVal)) {
-            await this.recordModel.upsert({
+            matrixUpserts.push({
               projectId,
               nodeId: node.id,
               columnId: '__base__',
@@ -1118,11 +1192,15 @@ export class IngestionService {
               notes: `Ingested automatically via ${sourceLabel || 'API Ingestion Service'}`,
               scoreValue: typeof matchedVal === 'number' ? matchedVal : 1,
             });
-            populatedMatrixCount++;
           }
         }
       }
     }
+
+    const tDb0 = Date.now();
+    await this.bulkUpsertRecords(matrixUpserts);
+    const populatedMatrixCount = matrixUpserts.length;
+    this.logger.log(`Matrix bulk upsert (${populatedMatrixCount} rows) in ${Date.now() - tDb0}ms`);
 
     // ----------------------------------------------------
     // 8. AUTOMATED SCORECARD CALCULATION ENGINE
@@ -1131,7 +1209,9 @@ export class IngestionService {
     // then updates the ScorecardRollup entity.
     // ----------------------------------------------------
     this.logger.log(`Running automated scorecard calculation engine for project ${projectId}...`);
+    const tCalc0 = Date.now();
     const calcResult = await this.scorecardCalcService.calculateAllRowsForProject(projectId);
+    this.logger.log(`Scorecard calculation finished in ${Date.now() - tCalc0}ms`);
 
     // Update project status to CALCULATED
     await project.update({ status: ProjectStatus.CALCULATED });
@@ -1140,12 +1220,27 @@ export class IngestionService {
       `Ingestion & Scorecard Calculation Complete. Staged: ${recordsToInsert.length}, Populated Base: ${populatedMatrixCount}, Rows Calculated: ${calcResult.calculatedRows}, Overall Score: ${calcResult.overallScore}/10.`,
     );
 
+    const stagedRecords = recordsToInsert.map((r) => ({
+      source: String(r.source),
+      metricLabel: r.metricLabel,
+      metricKey: r.metricKey,
+      categoryKey: r.categoryKey,
+      extractedValue: r.extractedValue ?? null,
+      unit: r.unit,
+      ingestionStatus: r.ingestionStatus,
+    }));
+
+    const durationMs = Date.now() - tAll0;
+    this.logger.log(`triggerIngestion total duration: ${durationMs}ms`);
+
     return {
       success: true,
       stagedCount: recordsToInsert.length,
       populatedMatrixCount,
       calculatedRows: calcResult.calculatedRows,
       overallScore: calcResult.overallScore,
+      durationMs,
+      stagedRecords,
     };
   }
 }
