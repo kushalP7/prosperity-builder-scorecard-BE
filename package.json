@@ -13,6 +13,14 @@
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/main",
     "migrate:storage": "ts-node src/scripts/migrate-cloudinary-to-s3.ts",
+    "migrate": "ts-node -r tsconfig-paths/register src/database/migrator.ts up",
+    "migrate:down": "ts-node -r tsconfig-paths/register src/database/migrator.ts down",
+    "migrate:status": "ts-node -r tsconfig-paths/register src/database/migrator.ts status",
+    "migrate:stamp": "ts-node -r tsconfig-paths/register src/database/migrator.ts stamp",
+    "migrate:prod": "ts-node -r tsconfig-paths/register src/database/migrator.ts --env=.env.prod up",
+    "migrate:prod:status": "ts-node -r tsconfig-paths/register src/database/migrator.ts --env=.env.prod status",
+    "migrate:prod:stamp": "ts-node -r tsconfig-paths/register src/database/migrator.ts --env=.env.prod stamp",
+    "migrate:prod:restamp": "ts-node -r tsconfig-paths/register src/database/migrator.ts --env=.env.prod restamp",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix"
   },
   "dependencies": {
@@ -41,7 +49,8 @@
     "rxjs": "^7.8.1",
     "sequelize": "^6.37.1",
     "sequelize-typescript": "^2.1.6",
-    "streamifier": "^0.1.1"
+    "streamifier": "^0.1.1",
+    "umzug": "^3.8.3"
   },
   "devDependencies": {
     "@nestjs/cli": "^10.3.0",

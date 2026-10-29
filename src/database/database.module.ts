@@ -56,7 +56,8 @@ import { Inquiry } from '../modules/inquiries/entities/inquiry.entity';
           Inquiry,
         ],
         autoLoadModels: true,
-        synchronize: true, // Sync database schema automatically in dev mode
+        // Schema changes must go through Umzug migrations (src/database/migrations).
+        synchronize: false,
         logging: process.env.NODE_ENV === 'development' ? console.log : false,
       }),
     }),
