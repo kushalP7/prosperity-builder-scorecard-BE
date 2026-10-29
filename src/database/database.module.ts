@@ -17,6 +17,7 @@ import { ScorecardRollup } from '../modules/engine/entities/scorecard-rollup.ent
 import { LandingReport } from '../modules/landing-cms/entities/landing-report.entity';
 import { LandingProject } from '../modules/landing-cms/entities/landing-project.entity';
 import { LandingMedia } from '../modules/landing-cms/entities/landing-media.entity';
+import { LandingPartner } from '../modules/landing-cms/entities/landing-partner.entity';
 import { AnalyticsWidget } from '../modules/analytics/entities/analytics-widget.entity';
 import { User } from '../modules/users/entities/user.entity';
 import { Inquiry } from '../modules/inquiries/entities/inquiry.entity';
@@ -50,6 +51,7 @@ import { Inquiry } from '../modules/inquiries/entities/inquiry.entity';
           LandingReport,
           LandingProject,
           LandingMedia,
+          LandingPartner,
           AnalyticsWidget,
           Inquiry,
         ],

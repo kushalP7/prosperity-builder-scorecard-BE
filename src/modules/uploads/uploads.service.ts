@@ -67,6 +67,8 @@ export class UploadsService {
       subPath = 'Media';
     } else if (normalized.includes('report')) {
       subPath = 'Reports';
+    } else if (normalized.includes('partner')) {
+      subPath = 'partners';
     } else if (normalized.includes('project')) {
       subPath = 'Project_Partners';
     } else if (normalized.includes('logo')) {
