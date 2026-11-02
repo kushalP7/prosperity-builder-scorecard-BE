@@ -115,8 +115,9 @@ export class OrdersService implements OnModuleInit {
   }
 
   private stubPayAllowed(): boolean {
-    if (this.isProduction()) return false;
+    // Explicit stub mode always allows fake-card /pay (including NODE_ENV=production).
     if (this.activePaymentProvider() === 'stub') return true;
+    // Stripe mode: allow admin stub only when opt-in (works in prod for staging/demo EC2).
     return String(this.configService.get<string>('ALLOW_STUB_PAY') || '').toLowerCase() === 'true';
   }
 
@@ -128,7 +129,9 @@ export class OrdersService implements OnModuleInit {
     if (requested === 'stripe' && !stripeConfigured) {
       message = 'PAYMENT_PROVIDER=stripe but STRIPE_SECRET_KEY is missing — falling back to stub checkout.';
     } else if (provider === 'stub') {
-      message = 'Stub/fake card checkout (local). Set PAYMENT_PROVIDER=stripe with keys to use Stripe.';
+      message = this.isProduction()
+        ? 'Stub/fake card checkout (PAYMENT_PROVIDER=stub). Switch to stripe + keys for live card payments.'
+        : 'Stub/fake card checkout (local). Set PAYMENT_PROVIDER=stripe with keys to use Stripe.';
     }
     return {
       provider,
