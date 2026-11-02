@@ -17,8 +17,20 @@ export class UsersController {
   @Get()
   @Roles('super_admin', 'project_lead')
   @ApiOperation({ summary: 'List all team members and assigned roles' })
-  async findAll(@Query('search') search?: string) {
-    const data = await this.usersService.findAll(search);
+  async findAll(
+    @Query('search') search?: string,
+    @Query('role') role?: string,
+    @Query('status') status?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const data = await this.usersService.findAll({
+      search,
+      role,
+      status,
+      page: page !== undefined && page !== '' ? parseInt(page, 10) : undefined,
+      limit: limit !== undefined && limit !== '' ? parseInt(limit, 10) : undefined,
+    });
     return { success: true, data };
   }
 

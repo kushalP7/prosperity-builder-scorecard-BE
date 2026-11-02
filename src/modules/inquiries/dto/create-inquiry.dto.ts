@@ -1,5 +1,8 @@
-import { IsEmail, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsEmail, IsIn, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+
+export const INQUIRY_LEAD_ROLES = ['county', 'city', 'partner_vendor'] as const;
+export type InquiryLeadRole = (typeof INQUIRY_LEAD_ROLES)[number];
 
 export class CreateInquiryDto {
   @ApiProperty({ description: 'Contact first name', example: 'Sarah' })
@@ -64,6 +67,18 @@ export class CreateInquiryDto {
   @IsNotEmpty()
   @MaxLength(100)
   organizationType: string;
+
+  @ApiProperty({
+    description: 'Authorized role for this inquiry (exactly one)',
+    enum: INQUIRY_LEAD_ROLES,
+    example: 'county',
+  })
+  @IsString()
+  @IsNotEmpty()
+  @IsIn(INQUIRY_LEAD_ROLES, {
+    message: 'leadRole must be one of: county, city, partner_vendor',
+  })
+  leadRole: InquiryLeadRole;
 
   @ApiPropertyOptional({
     description: 'Optional preliminary notes or questions',

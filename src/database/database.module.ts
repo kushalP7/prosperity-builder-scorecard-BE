@@ -11,6 +11,8 @@ import { TemplateColumn } from '../modules/templates/entities/template-column.en
 import { Project } from '../modules/projects/entities/project.entity';
 import { ProjectDataRecord } from '../modules/projects/entities/project-data-record.entity';
 import { PaymentMilestone } from '../modules/payments/entities/payment-milestone.entity';
+import { Order } from '../modules/orders/entities/order.entity';
+import { PaymentAttempt } from '../modules/orders/entities/payment-attempt.entity';
 import { QuestionnaireSubmission } from '../modules/intake/entities/questionnaire-submission.entity';
 import { ExternalDataStaging } from '../modules/ingestion/entities/external-data-staging.entity';
 import { ScorecardRollup } from '../modules/engine/entities/scorecard-rollup.entity';
@@ -45,6 +47,8 @@ import { Inquiry } from '../modules/inquiries/entities/inquiry.entity';
           Project,
           ProjectDataRecord,
           PaymentMilestone,
+          Order,
+          PaymentAttempt,
           QuestionnaireSubmission,
           ExternalDataStaging,
           ScorecardRollup,

@@ -116,7 +116,7 @@ export class LandingProjectsService {
   async delete(id: string): Promise<{ success: boolean; message: string }> {
     const project = await this.findById(id);
 
-    // Soft delete: mark as deleted, preserve Cloudinary assets
+    // Soft delete: mark as deleted, preserve storage assets
     await project.update({
       deleted: true,
       deletedAt: new Date(),

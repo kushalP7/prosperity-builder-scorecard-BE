@@ -1,7 +1,7 @@
 import * as path from 'path';
 import { Sequelize } from 'sequelize';
 import { Umzug, SequelizeStorage } from 'umzug';
-import { sequelize as migrationFileSequelize } from './sequelize';
+import { closeMigrationSequelize } from './sequelize';
 
 export type RunMigrationsResult = {
   applied: string[];
@@ -76,9 +76,8 @@ export async function runPendingMigrations(
       pendingBefore: pending.length,
     };
   } finally {
-    // Migration files use a shared sequelize for transactions — close its pool too
     try {
-      await migrationFileSequelize.close();
+      await closeMigrationSequelize();
     } catch {
       /* ignore */
     }

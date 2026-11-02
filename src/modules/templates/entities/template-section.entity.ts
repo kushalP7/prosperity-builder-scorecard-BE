@@ -13,12 +13,6 @@ export class TemplateSection extends Model {
   @Column({ type: DataType.TEXT, allowNull: true })
   description: string;
 
-  @Column({ type: DataType.STRING, defaultValue: '#B5111B' })
-  accentColor: string;
-
-  @Column({ type: DataType.STRING, defaultValue: 'Layers' })
-  icon: string;
-
   @Column({ type: DataType.INTEGER, defaultValue: 1 })
   version: number;
 

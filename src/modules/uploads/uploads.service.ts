@@ -1,6 +1,5 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { S3StorageProvider } from './providers/s3.provider';
-import { CloudinaryStorageProvider } from './providers/cloudinary.provider';
 import { IStorageProvider, StorageUploadResult } from './interfaces/storage.interface';
 import 'multer';
 
@@ -10,21 +9,11 @@ export class UploadsService {
   private readonly activeProvider: IStorageProvider;
   private readonly driver: string;
 
-  constructor(
-    private readonly s3Provider: S3StorageProvider,
-    private readonly cloudinaryProvider: CloudinaryStorageProvider,
-  ) {
-    // Driver can be 'minio', 's3', or 'cloudinary'
-    // Default to 'minio' (or 's3') as requested
+  constructor(private readonly s3Provider: S3StorageProvider) {
+    // Driver can be 'minio' or 's3' (both use the S3-compatible provider)
     const envDriver = (process.env.STORAGE_DRIVER || '').toLowerCase().trim();
-    if (envDriver === 'cloudinary') {
-      this.driver = 'cloudinary';
-      this.activeProvider = this.cloudinaryProvider;
-    } else {
-      // Default to S3/MinIO
-      this.driver = envDriver || 'minio';
-      this.activeProvider = this.s3Provider;
-    }
+    this.driver = envDriver === 's3' ? 's3' : envDriver || 'minio';
+    this.activeProvider = this.s3Provider;
 
     this.logger.log(`Active storage driver: "${this.driver}", environment prefix: "${this.getEnvPrefix()}"`);
   }
@@ -82,11 +71,7 @@ export class UploadsService {
 
   isManagedUrl(url: string): boolean {
     if (!url || typeof url !== 'string') return false;
-    return this.cloudinaryProvider.isManagedUrl(url) || this.s3Provider.isManagedUrl(url);
-  }
-
-  extractCloudinaryDetails(url: string): { publicId: string; resourceType: 'image' | 'raw' | 'video' } | null {
-    return this.cloudinaryProvider.extractCloudinaryDetails(url);
+    return this.s3Provider.isManagedUrl(url);
   }
 
   async uploadFile(
@@ -105,33 +90,16 @@ export class UploadsService {
     if (!url || typeof url !== 'string') {
       return { success: false, result: 'No URL provided' };
     }
-
-    // Intelligently route deletion based on URL origin
-    if (this.cloudinaryProvider.isManagedUrl(url)) {
-      return this.cloudinaryProvider.deleteFileByUrl(url);
-    }
-
-    if (this.s3Provider.isManagedUrl(url)) {
-      return this.s3Provider.deleteFileByUrl(url);
-    }
-
-    // Try active provider as fallback
-    return this.activeProvider.deleteFileByUrl(url);
+    return this.s3Provider.deleteFileByUrl(url);
   }
 
   async deleteFile(
-    publicId: string,
-    resourceType: 'image' | 'raw' | 'video' | 'auto' = 'image',
+    keyOrPublicId: string,
+    _resourceType: 'image' | 'raw' | 'video' | 'auto' = 'image',
   ): Promise<{ success: boolean; result?: string }> {
-    if (!publicId) {
+    if (!keyOrPublicId) {
       return { success: false, result: 'No publicId provided' };
     }
-
-    // If key contains folder path and active driver is MinIO/S3, delete from S3
-    if (this.driver !== 'cloudinary') {
-      return this.s3Provider.deleteFile(publicId);
-    }
-
-    return this.cloudinaryProvider.deleteFile(publicId, resourceType);
+    return this.s3Provider.deleteFile(keyOrPublicId);
   }
 }

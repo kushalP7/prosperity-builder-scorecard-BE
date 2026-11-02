@@ -23,6 +23,28 @@ npm run start:dev
 
 The NestJS backend server will run on **`http://localhost:3001`**.
 
+### Payments: stub vs Stripe (`PAYMENT_PROVIDER`)
+
+| Variable | Purpose |
+| :--- | :--- |
+| `PAYMENT_PROVIDER` | `stub` (default local) or `stripe` — works locally when set to `stripe` + test keys |
+| `STRIPE_SECRET_KEY` | Required when `PAYMENT_PROVIDER=stripe` (`sk_test_…` for sandbox) |
+| `STRIPE_WEBHOOK_SECRET` | Webhook signing secret (`whsec_…`); optional locally (confirm-payment still unlocks) |
+| `ALLOW_STUB_PAY` | Optional admin stub override while using Stripe (non-production only) |
+| `FRONTEND_URL` | Optional; return URLs / docs |
+
+**Local without Stripe:** `PAYMENT_PROVIDER=stub` → fake card checkout.  
+**Local with Stripe sandbox:** `PAYMENT_PROVIDER=stripe` + test keys + FE `VITE_STRIPE_PUBLISHABLE_KEY`.  
+**Production:** `PAYMENT_PROVIDER=stripe` (stub pay is always blocked).
+
+Checkout UI reads `GET /api/v1/orders/payment-config` to pick Stripe Element vs fake card.
+
+Webhook (when using Stripe): `https://<your-api-host>/api/v1/stripe/webhook`  
+Events: `payment_intent.succeeded`, `payment_intent.payment_failed`  
+Local: `stripe listen --forward-to localhost:3001/api/v1/stripe/webhook`
+
+Checkout requires JWT. Amounts always come from Settings.
+
 ---
 
 ## 📚 REST API & Swagger Documentation
@@ -34,8 +56,6 @@ Once the server is running, open:
 
 | Method | Endpoint | Description |
 | :--- | :--- | :--- |
-| **POST** | `/api/v1/seed/sample-data` | Populates standard 12 sections, 6 default columns, and sample projects |
-| **POST** | `/api/v1/seed/reset` | Resets database tables back to clean sample state |
 | **GET** | `/api/v1/projects` | List all projects |
 | **POST** | `/api/v1/projects` | Create a project |
 | **GET** | `/api/v1/projects/:id` | Get project data matrix and assigned section snapshots |

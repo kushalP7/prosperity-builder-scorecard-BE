@@ -1,13 +1,17 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Inject, forwardRef, Optional } from '@nestjs/common';
 import { InjectModel } from '@nestjs/sequelize';
 import { PaymentMilestone, MilestoneType, PaymentStatus } from './entities/payment-milestone.entity';
 import { Project, ProjectStatus } from '../projects/entities/project.entity';
+import { OrdersService } from '../orders/orders.service';
 
 @Injectable()
 export class PaymentsService {
   constructor(
     @InjectModel(PaymentMilestone) private milestoneModel: typeof PaymentMilestone,
     @InjectModel(Project) private projectModel: typeof Project,
+    @Optional()
+    @Inject(forwardRef(() => OrdersService))
+    private ordersService?: OrdersService,
   ) { }
 
   async createDefaultMilestones(projectId: string, totalAmount = 5000): Promise<PaymentMilestone[]> {
@@ -63,7 +67,7 @@ export class PaymentsService {
     });
 
     if (milestones.length === 0) {
-      milestones = await this.createDefaultMilestones(projectId, Number(project.totalProjectValue) || 5000);
+      milestones = await this.createDefaultMilestones(projectId, 5000);
     }
 
     const totalDue = milestones.reduce((sum, m) => sum + Number(m.amountDue), 0);
@@ -91,7 +95,7 @@ export class PaymentsService {
     });
 
     if (!milestone) {
-      await this.createDefaultMilestones(projectId, Number(project.totalProjectValue) || 5000);
+      await this.createDefaultMilestones(projectId, 5000);
       milestone = await this.milestoneModel.findOne({ where: { projectId, milestoneType } });
     }
 
@@ -105,13 +109,21 @@ export class PaymentsService {
       transactionReference: `BYPASS-${milestoneType}-${Date.now().toString().slice(-6)}`,
     });
 
-    // Advance project status if applicable
-    if (milestoneType === MilestoneType.INITIAL_40 && project.status === ProjectStatus.ONBOARDING) {
-      await project.update({ status: ProjectStatus.INTAKE_PENDING });
-    } else if (milestoneType === MilestoneType.MID_30 && project.status === ProjectStatus.INTAKE_PENDING) {
-      await project.update({ status: ProjectStatus.INGESTION_RUNNING });
+    // Advance project status if applicable (full package path; MID_30 no longer changes status —
+    // questionnaire sets INTAKE_SUBMITTED; ingestion sets CALCULATED).
+    let nextStatus: ProjectStatus | null = null;
+    if (
+      milestoneType === MilestoneType.INITIAL_40 &&
+      (project.status === ProjectStatus.INTAKE_PENDING || String(project.status) === 'ONBOARDING')
+    ) {
+      nextStatus = ProjectStatus.INTAKE_PENDING;
     } else if (milestoneType === MilestoneType.FINAL_30) {
-      await project.update({ status: ProjectStatus.PUBLISHED });
+      nextStatus = ProjectStatus.PUBLISHED;
+    }
+
+    if (nextStatus && project.status !== nextStatus) {
+      await project.update({ status: nextStatus });
+      await this.ordersService?.syncTimelineForProject(projectId, nextStatus);
     }
 
     return this.getProjectMilestones(projectId);

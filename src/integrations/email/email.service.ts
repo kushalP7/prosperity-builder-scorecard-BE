@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';
+import { getErrorMessage, getErrorStack } from '../../common/errors';
 
 export interface SendEmailOptions {
   to: string | string[];
@@ -19,10 +20,7 @@ export class EmailService {
   private readonly defaultFrom: string;
 
   constructor(private readonly configService: ConfigService) {
-    this.defaultFrom =
-      this.configService.get<string>('MAIL_FROM') ||
-      `"Rose Associates Southeast" <${this.configService.get<string>('SMTP_USER', 'info@roseassociates.com')}>`;
-
+    this.defaultFrom = this.configService.get<string>('MAIL_FROM') || `"Rose Associates Southeast" <${this.configService.get<string>('SMTP_USER', 'info@roseassociates.com')}>`;
     this.initTransporter();
   }
 
@@ -48,14 +46,12 @@ export class EmailService {
           },
         });
         this.logger.log(`[MAIL][INITIALIZED] - Connected to ${host}:${port} (${user})`);
-      } catch (err: any) {
-        this.logger.error(`[MAIL][CONFIG_ERROR] - Failed to initialize SMTP: ${err.message}`);
+      } catch (err: unknown) {
+        this.logger.error(`[MAIL][CONFIG_ERROR] - Failed to initialize SMTP: ${getErrorMessage(err)}`);
         this.transporter = null;
       }
     } else {
-      this.logger.warn(
-        `[MAIL][DEV_MODE] - SMTP credentials not fully configured in .env. Emails will be logged to console.`,
-      );
+      this.logger.warn(`[MAIL][DEV_MODE] - SMTP credentials not fully configured in .env. Emails will be logged to console.`);
     }
   }
 
@@ -80,8 +76,8 @@ export class EmailService {
 
         this.logger.log(`[MAIL][SENT] - To: ${to} - Subject: "${options.subject}" - ID: ${info.messageId}`);
         return { success: true, messageId: info.messageId };
-      } catch (error: any) {
-        this.logger.error(`[MAIL][FAILED] - To: ${to} - Error: ${error.message}`, error.stack);
+      } catch (error: unknown) {
+        this.logger.error( `[MAIL][FAILED] - To: ${to} - Error: ${getErrorMessage(error)}`, getErrorStack(error) );
         throw error;
       }
     } else {

@@ -1,16 +1,18 @@
 import { Controller, Get, Post, Put, Delete, Body, Param, Query } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiQuery } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiQuery, ApiBearerAuth } from '@nestjs/swagger';
 import { LandingMediaService } from '../services/landing-media.service';
 import { CreateLandingMediaDto } from '../dto/create-landing-media.dto';
 import { UpdateLandingMediaDto } from '../dto/update-landing-media.dto';
+import { Public } from '../../auth/decorators/public.decorator';
 
 @ApiTags('Landing CMS Media')
 @Controller(['api/v1/landing-cms/media', 'landing-cms/media'])
 export class LandingMediaController {
   constructor(private readonly mediaService: LandingMediaService) { }
 
+  @Public()
   @Get()
-  @ApiOperation({ summary: 'Get all media sphere items' })
+  @ApiOperation({ summary: 'Get all media sphere items (public for landing page)' })
   @ApiQuery({ name: 'mediaType', required: false, description: 'Filter by media type (video, audio, document)' })
   @ApiQuery({ name: 'category', required: false, description: 'Filter by category' })
   @ApiQuery({ name: 'status', required: false, description: 'Filter by status' })
@@ -45,24 +47,28 @@ export class LandingMediaController {
     });
   }
 
+  @Public()
   @Get(':id')
-  @ApiOperation({ summary: 'Get media item by ID' })
+  @ApiOperation({ summary: 'Get media item by ID (public for landing page)' })
   async findOne(@Param('id') id: string) {
     return this.mediaService.findOne(id);
   }
 
+  @ApiBearerAuth()
   @Post()
   @ApiOperation({ summary: 'Create a new media sphere item' })
   async create(@Body() dto: CreateLandingMediaDto) {
     return this.mediaService.create(dto);
   }
 
+  @ApiBearerAuth()
   @Put(':id')
   @ApiOperation({ summary: 'Update an existing media sphere item' })
   async update(@Param('id') id: string, @Body() dto: UpdateLandingMediaDto) {
     return this.mediaService.update(id, dto);
   }
 
+  @ApiBearerAuth()
   @Delete(':id')
   @ApiOperation({ summary: 'Delete a media sphere item' })
   async remove(@Param('id') id: string) {

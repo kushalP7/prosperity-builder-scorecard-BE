@@ -1,17 +1,19 @@
 import { Controller, Get, Post, Put, Delete, Body, Param, Query } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiQuery } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiQuery, ApiBearerAuth } from '@nestjs/swagger';
 import { LandingPartnersService } from '../services/landing-partners.service';
 import { CreateLandingPartnerDto } from '../dto/create-landing-partner.dto';
 import { UpdateLandingPartnerDto } from '../dto/update-landing-partner.dto';
 import { MoveLandingPartnerDto } from '../dto/move-landing-partner.dto';
+import { Public } from '../../auth/decorators/public.decorator';
 
 @ApiTags('Landing CMS Partners')
 @Controller(['api/v1/landing-cms/partners', 'landing-cms/partners'])
 export class LandingPartnersController {
   constructor(private readonly partnersService: LandingPartnersService) {}
 
+  @Public()
   @Get()
-  @ApiOperation({ summary: 'Get all landing project partners' })
+  @ApiOperation({ summary: 'Get all landing project partners (public for landing page)' })
   @ApiQuery({ name: 'status', required: false })
   @ApiQuery({ name: 'search', required: false })
   @ApiQuery({ name: 'page', required: false, type: Number })
@@ -30,30 +32,35 @@ export class LandingPartnersController {
     });
   }
 
+  @Public()
   @Get(':id')
-  @ApiOperation({ summary: 'Get landing partner by ID' })
+  @ApiOperation({ summary: 'Get landing partner by ID (public for landing page)' })
   async findById(@Param('id') id: string) {
     return this.partnersService.findById(id);
   }
 
+  @ApiBearerAuth()
   @Post()
   @ApiOperation({ summary: 'Create a new landing partner' })
   async create(@Body() dto: CreateLandingPartnerDto) {
     return this.partnersService.create(dto);
   }
 
+  @ApiBearerAuth()
   @Put(':id/move')
   @ApiOperation({ summary: 'Move a partner up or down in display order' })
   async move(@Param('id') id: string, @Body() dto: MoveLandingPartnerDto) {
     return this.partnersService.move(id, dto.direction);
   }
 
+  @ApiBearerAuth()
   @Put(':id')
   @ApiOperation({ summary: 'Update an existing landing partner' })
   async update(@Param('id') id: string, @Body() dto: UpdateLandingPartnerDto) {
     return this.partnersService.update(id, dto);
   }
 
+  @ApiBearerAuth()
   @Delete(':id')
   @ApiOperation({ summary: 'Delete a landing partner' })
   async delete(@Param('id') id: string) {

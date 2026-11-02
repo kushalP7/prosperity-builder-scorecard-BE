@@ -1,9 +1,10 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Inject, forwardRef, Optional } from '@nestjs/common';
 import { InjectModel } from '@nestjs/sequelize';
 import { QuestionnaireSubmission, QuestionnaireStatus } from './entities/questionnaire-submission.entity';
 import { Project, ProjectStatus } from '../projects/entities/project.entity';
 import { PaymentsService } from '../payments/payments.service';
 import { MilestoneType } from '../payments/entities/payment-milestone.entity';
+import { OrdersService } from '../orders/orders.service';
 
 export interface QuestionDefinition {
   key: string;
@@ -28,6 +29,9 @@ export class QuestionnaireService {
     @InjectModel(QuestionnaireSubmission) private submissionModel: typeof QuestionnaireSubmission,
     @InjectModel(Project) private projectModel: typeof Project,
     private paymentsService: PaymentsService,
+    @Optional()
+    @Inject(forwardRef(() => OrdersService))
+    private ordersService?: OrdersService,
   ) { }
 
   getQuestionnaireDefinition(): CategoryQuestionGroup[] {
@@ -370,6 +374,7 @@ export class QuestionnaireService {
 
     // Update project status to INTAKE_SUBMITTED
     await project.update({ status: ProjectStatus.INTAKE_SUBMITTED });
+    await this.ordersService?.syncTimelineForProject(projectId, ProjectStatus.INTAKE_SUBMITTED);
 
     return {
       projectId,

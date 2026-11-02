@@ -6,6 +6,7 @@ import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
 import { runPendingMigrations } from './database/run-migrations';
+import { getErrorMessage } from './common/errors';
 const compression = require('compression');
 
 // Load .env before migrations (EC2/prod usually already has process.env set)
@@ -25,15 +26,16 @@ async function bootstrap() {
       } else {
         logger.log('Database migrations up to date.');
       }
-    } catch (err: any) {
-      logger.error(`Migration failed — refusing to start: ${err?.message || err}`);
+    } catch (err: unknown) {
+      logger.error(`Migration failed — refusing to start: ${getErrorMessage(err)}`);
       process.exit(1);
     }
   } else {
     logger.warn('AUTO_MIGRATE=false — skipping migrations on boot.');
   }
 
-  const app = await NestFactory.create(AppModule);
+  // rawBody: required for Stripe webhook signature verification
+  const app = await NestFactory.create(AppModule, { rawBody: true });
 
   // Enable HTTP Gzip compression for fast payloads
   app.use(compression());
@@ -62,11 +64,12 @@ async function bootstrap() {
       .setTitle('Rose Associates — Prosperity Builder Scorecard API')
       .setDescription('NestJS REST API microservice for real-estate project assessments, dynamic template schemas, conditional rules, scoring, and analytics.')
       .setVersion('1.0')
+      .addBearerAuth()
       .addTag('Projects')
       .addTag('Templates')
       .addTag('Analytics')
       .addTag('Settings')
-      .addTag('Sample Data Seed')
+      .addTag('Orders & Payments')
       .build();
 
     const document = SwaggerModule.createDocument(app, config);

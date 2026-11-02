@@ -10,14 +10,4 @@ export class CreateSectionDto {
   @IsOptional()
   @IsString()
   description?: string;
-
-  @ApiProperty({ example: '#B5111B', required: false })
-  @IsOptional()
-  @IsString()
-  accentColor?: string;
-
-  @ApiProperty({ example: 'Layers', required: false })
-  @IsOptional()
-  @IsString()
-  icon?: string;
 }

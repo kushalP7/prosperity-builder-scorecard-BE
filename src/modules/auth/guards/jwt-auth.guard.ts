@@ -2,6 +2,7 @@ import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from
 import { Reflector } from '@nestjs/core';
 import { TokenService } from '../services/token.service';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
+import { getErrorCode, getErrorName } from '../../../common/errors';
 
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
@@ -44,12 +45,16 @@ export class JwtAuthGuard implements CanActivate {
       };
 
       return true;
-    } catch (err: any) {
+    } catch (err: unknown) {
       if (isPublic) {
         return true;
       }
+      const expired =
+        getErrorCode(err) === 'ERR_JWT_EXPIRED' || getErrorName(err) === 'JWTExpired';
       throw new UnauthorizedException(
-        err?.code === 'ERR_JWT_EXPIRED' ? 'Token has expired. Please refresh your session.' : 'Invalid or corrupted authentication token.',
+        expired
+          ? 'Token has expired. Please refresh your session.'
+          : 'Invalid or corrupted authentication token.',
       );
     }
   }

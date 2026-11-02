@@ -9,7 +9,7 @@ export class UploadsController {
   constructor(private readonly uploadsService: UploadsService) { }
 
   @Post('image')
-  @ApiOperation({ summary: 'Upload an image file to Cloudinary' })
+  @ApiOperation({ summary: 'Upload an image file to S3/MinIO' })
   @ApiConsumes('multipart/form-data')
   @ApiQuery({ name: 'folder', required: false, description: 'Target folder (reports, media, projects)' })
   @UseInterceptors(FileInterceptor('file'))
@@ -22,7 +22,7 @@ export class UploadsController {
   }
 
   @Post('file')
-  @ApiOperation({ summary: 'Upload a document or PDF file to Cloudinary' })
+  @ApiOperation({ summary: 'Upload a document or PDF file to S3/MinIO' })
   @ApiConsumes('multipart/form-data')
   @ApiQuery({ name: 'folder', required: false, description: 'Target folder (reports, media, projects)' })
   @UseInterceptors(FileInterceptor('file'))
@@ -35,7 +35,7 @@ export class UploadsController {
   }
 
   @Post('media')
-  @ApiOperation({ summary: 'Upload media (video, audio, or PDF) to Cloudinary under Rose/Media/' })
+  @ApiOperation({ summary: 'Upload media (video, audio, or PDF) to S3/MinIO under Rose/Media/' })
   @ApiConsumes('multipart/form-data')
   @ApiQuery({ name: 'folder', required: false, description: 'Target subfolder (audio, video, pdf)' })
   @ApiQuery({ name: 'type', required: false, description: 'Media type (audio, video, pdf)' })
@@ -56,7 +56,7 @@ export class UploadsController {
   }
 
   @Delete()
-  @ApiOperation({ summary: 'Delete a file from Cloudinary by publicId or URL' })
+  @ApiOperation({ summary: 'Delete a file from S3/MinIO by key or URL' })
   async deleteFile(@Body('publicId') publicId?: string, @Body('url') url?: string, @Body('resourceType') resourceType?: 'image' | 'raw' | 'video' | 'auto', @Query('url') queryUrl?: string,) {
     const targetUrl = url || queryUrl;
     if (targetUrl) {

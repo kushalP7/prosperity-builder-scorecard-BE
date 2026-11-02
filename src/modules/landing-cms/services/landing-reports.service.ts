@@ -24,47 +24,6 @@ export class LandingReportsService {
       .replace(/\-\-+/g, '-');
   }
 
-  private collectCloudinaryUrls(report: Partial<LandingReport>): string[] {
-    const urls: string[] = [];
-    if (report.coverImage && this.uploadsService.isManagedUrl(report.coverImage)) {
-      urls.push(report.coverImage);
-    }
-    if (report.pdfUrl && this.uploadsService.isManagedUrl(report.pdfUrl)) {
-      urls.push(report.pdfUrl);
-    }
-
-    if (Array.isArray(report.blocks)) {
-      report.blocks.forEach((block: any) => {
-        if (block?.pdfUrl && this.uploadsService.isManagedUrl(block.pdfUrl)) {
-          urls.push(block.pdfUrl);
-        }
-        if (Array.isArray(block?.images)) {
-          block.images.forEach((img: any) => {
-            if (img?.url && this.uploadsService.isManagedUrl(img.url)) {
-              urls.push(img.url);
-            }
-          });
-        }
-        if (Array.isArray(block?.files)) {
-          block.files.forEach((f: any) => {
-            if (f?.url && this.uploadsService.isManagedUrl(f.url)) {
-              urls.push(f.url);
-            }
-          });
-        }
-        if (Array.isArray(block?.items)) {
-          block.items.forEach((item: any) => {
-            if (item?.imageUrl && this.uploadsService.isManagedUrl(item.imageUrl)) {
-              urls.push(item.imageUrl);
-            }
-          });
-        }
-      });
-    }
-
-    return urls;
-  }
-
   async findAll(options?: {
     status?: string;
     featuredOnly?: boolean;
@@ -241,7 +200,7 @@ export class LandingReportsService {
   async delete(id: string): Promise<{ success: boolean; id: string; message: string }> {
     const report = await this.findById(id);
 
-    // Soft delete: mark as deleted, preserve Cloudinary assets
+    // Soft delete: mark as deleted, preserve storage assets
     await report.update({
       deleted: true,
       deletedAt: new Date(),

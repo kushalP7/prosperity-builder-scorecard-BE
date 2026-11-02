@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { SequelizeModule } from '@nestjs/sequelize';
 import { ScorecardRollup } from './entities/scorecard-rollup.entity';
 import { Project } from '../projects/entities/project.entity';
@@ -10,6 +10,9 @@ import { FormulaEngine } from './formula.engine';
 import { CalculatorService } from './calculator.service';
 import { CalibrationController } from './calibration.controller';
 import { PaymentsModule } from '../payments/payments.module';
+import { AuthModule } from '../auth/auth.module';
+import { OrdersModule } from '../orders/orders.module';
+import { UploadsModule } from '../uploads/uploads.module';
 
 import { ScorecardCalcService } from './scorecard-calc.service';
 
@@ -23,6 +26,9 @@ import { ScorecardCalcService } from './scorecard-calc.service';
       ExternalDataStaging,
     ]),
     PaymentsModule,
+    AuthModule,
+    UploadsModule,
+    forwardRef(() => OrdersModule),
   ],
   controllers: [CalibrationController],
   providers: [CalculatorService, ScoringEngine, FormulaEngine, ScorecardCalcService],

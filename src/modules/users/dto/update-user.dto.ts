@@ -1,6 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsEmail, IsEnum, IsOptional, IsString, MinLength } from 'class-validator';
-import { UserRole, UserStatus } from '../entities/user.entity';
+import { SubscriptionStatus, UserRole, UserStatus } from '../entities/user.entity';
 
 export class UpdateUserDto {
   @ApiPropertyOptional({ example: 'Samantha Vance' })
@@ -19,10 +19,20 @@ export class UpdateUserDto {
   @MinLength(6)
   password?: string;
 
-  @ApiPropertyOptional({ enum: ['super_admin', 'project_lead', 'assessment_specialist', 'client_viewer'] })
-  @IsEnum(['super_admin', 'project_lead', 'assessment_specialist', 'client_viewer'])
+  @ApiPropertyOptional({ enum: ['super_admin', 'project_lead', 'assessment_specialist', 'customer'] })
+  @IsEnum(['super_admin', 'project_lead', 'assessment_specialist', 'customer'])
   @IsOptional()
   role?: UserRole;
+
+  @ApiPropertyOptional({ enum: ['none', 'active', 'expired', 'cancelled'] })
+  @IsEnum(['none', 'active', 'expired', 'cancelled'])
+  @IsOptional()
+  subscriptionStatus?: SubscriptionStatus;
+
+  @ApiPropertyOptional()
+  @IsString()
+  @IsOptional()
+  subscriptionPackage?: string;
 
   @ApiPropertyOptional({ example: 'Real Estate Development' })
   @IsString()
@@ -33,4 +43,9 @@ export class UpdateUserDto {
   @IsEnum(['active', 'pending', 'suspended'])
   @IsOptional()
   status?: UserStatus;
+
+  @ApiPropertyOptional({ example: 'https://cdn.example.com/avatars/user.jpg' })
+  @IsString()
+  @IsOptional()
+  avatarUrl?: string | null;
 }

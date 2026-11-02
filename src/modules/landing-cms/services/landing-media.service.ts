@@ -4,6 +4,7 @@ import { LandingMedia } from '../entities/landing-media.entity';
 import { CreateLandingMediaDto } from '../dto/create-landing-media.dto';
 import { UpdateLandingMediaDto } from '../dto/update-landing-media.dto';
 import { UploadsService } from '../../uploads/uploads.service';
+import { getErrorMessage } from '../../../common/errors';
 import { Op } from 'sequelize';
 
 @Injectable()
@@ -14,7 +15,7 @@ export class LandingMediaService {
     private readonly uploadsService: UploadsService,
   ) { }
 
-  private collectCloudinaryUrls(media: Partial<LandingMedia>): string[] {
+  private collectManagedUrls(media: Partial<LandingMedia>): string[] {
     const urls: string[] = [];
     if (media.sourceUrl && this.uploadsService.isManagedUrl(media.sourceUrl)) {
       urls.push(media.sourceUrl);
@@ -146,21 +147,21 @@ export class LandingMediaService {
 
   async update(id: string, dto: UpdateLandingMediaDto): Promise<LandingMedia> {
     const media = await this.findOne(id);
-    const prevUrls = this.collectCloudinaryUrls(media);
+    const prevUrls = this.collectManagedUrls(media);
     const sanitizedDto = this.sanitizeMediaDto(dto, media.mediaType);
 
     await media.update(sanitizedDto);
     const updatedMedia = await this.findOne(id);
 
-    // Clean up replaced Cloudinary files
-    const newUrls = new Set(this.collectCloudinaryUrls(updatedMedia));
+    // Clean up replaced storage files
+    const newUrls = new Set(this.collectManagedUrls(updatedMedia));
     const orphanedUrls = prevUrls.filter((url) => !newUrls.has(url));
 
     for (const url of orphanedUrls) {
       try {
         await this.uploadsService.deleteFileByUrl(url);
-      } catch (err) {
-        console.warn(`[LandingMediaService] Failed to clean up Cloudinary asset ${url}:`, err);
+      } catch (err: unknown) {
+        console.warn(`[LandingMediaService] Failed to clean up storage asset ${url}:`, getErrorMessage(err));
       }
     }
 
@@ -170,7 +171,7 @@ export class LandingMediaService {
   async remove(id: string): Promise<{ success: boolean; message: string }> {
     const media = await this.findOne(id);
 
-    // Soft delete: mark as deleted, preserve Cloudinary assets
+    // Soft delete: mark as deleted, preserve storage assets
     await media.update({
       deleted: true,
       deletedAt: new Date(),

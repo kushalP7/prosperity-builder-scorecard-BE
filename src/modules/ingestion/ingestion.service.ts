@@ -1,10 +1,17 @@
-import { Injectable, NotFoundException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, Logger, Inject, forwardRef, Optional } from '@nestjs/common';
 import { InjectModel } from '@nestjs/sequelize';
 import { ExternalDataStaging, ApiDataSource } from './entities/external-data-staging.entity';
 import { Project, ProjectStatus } from '../projects/entities/project.entity';
 import { ProjectDataRecord } from '../projects/entities/project-data-record.entity';
 import { QuestionnaireSubmission } from '../intake/entities/questionnaire-submission.entity';
 import { ScorecardCalcService } from '../engine/scorecard-calc.service';
+import { OrdersService } from '../orders/orders.service';
+import {
+  allowsProposedSource,
+  isAdminEmptyMetric,
+  resolveMetricFillPolicy,
+} from '../../common/metric-source-policy';
+import { getErrorMessage } from '../../common/errors';
 
 @Injectable()
 export class IngestionService {
@@ -16,6 +23,9 @@ export class IngestionService {
     @InjectModel(ProjectDataRecord) private recordModel: typeof ProjectDataRecord,
     @InjectModel(QuestionnaireSubmission) private questionnaireModel: typeof QuestionnaireSubmission,
     private scorecardCalcService: ScorecardCalcService,
+    @Optional()
+    @Inject(forwardRef(() => OrdersService))
+    private ordersService?: OrdersService,
   ) { }
 
   async getStagedData(projectId: string): Promise<ExternalDataStaging[]> {
@@ -32,16 +42,12 @@ export class IngestionService {
       const res = await fetch(url, { ...options, signal: controller.signal });
       clearTimeout(timer);
       return res;
-    } catch (err) {
+    } catch (err: unknown) {
       clearTimeout(timer);
       throw err;
     }
   }
 
-  /**
-   * Postgres bulk upsert via ON CONFLICT (projectId, nodeId, columnId).
-   * One SQL statement per chunk instead of N round-trips.
-   */
   private async bulkUpsertRecords(records: Array<Record<string, any>>): Promise<void> {
     if (!records.length) return;
     const sequelize = this.recordModel.sequelize;
@@ -89,6 +95,7 @@ export class IngestionService {
 
   async triggerIngestion(projectId: string): Promise<{
     success: boolean;
+    message?: string;
     stagedCount: number;
     populatedMatrixCount?: number;
     calculatedRows?: number;
@@ -113,6 +120,7 @@ export class IngestionService {
       this.logger.warn(`Project ${projectId} has no assigned sections. Skipping live ingestion calculation.`);
       return {
         success: false,
+        message: 'Assign at least one scorecard section before syncing live APIs.',
         stagedCount: 0,
         populatedMatrixCount: 0,
         calculatedRows: 0,
@@ -120,10 +128,37 @@ export class IngestionService {
       };
     }
 
-    // Clean up existing staged records for this project
+    if (!(project as any).locationConfirmed) {
+      this.logger.warn(`Project ${projectId} location is not confirmed. Skipping live ingestion.`);
+      return {
+        success: false,
+        message: 'Confirm the project location (state + county or state + city) before syncing. Ask the customer to set location on first open, or edit it on the project.',
+        stagedCount: 0,
+        populatedMatrixCount: 0,
+        calculatedRows: 0,
+        overallScore: 0,
+      };
+    }
+
+    const isCityJurisdiction =
+      String((project as any).jurisdictionType || 'COUNTY').toUpperCase() === 'CITY';
+
+    if (isCityJurisdiction) {
+      const pf = String((project as any).placeFips || '').trim();
+      if (!pf) {
+        return {
+          success: false,
+          message: 'CITY jurisdiction requires a confirmed city (Census place FIPS) before syncing.',
+          stagedCount: 0,
+          populatedMatrixCount: 0,
+          calculatedRows: 0,
+          overallScore: 0,
+        };
+      }
+    }
+
     await this.stagingModel.destroy({ where: { projectId } });
 
-    // Fetch Phase 2 Questionnaire Submission if present
     const questionnaire = await this.questionnaireModel.findOne({ where: { projectId } });
     const qAnswers: Record<string, any> = questionnaire?.answersPayload || {};
     this.logger.log(`Project ${projectId} questionnaire answers found: ${Object.keys(qAnswers).length} entries.`);
@@ -176,13 +211,12 @@ export class IngestionService {
 
     const stateFips = (project.stateFips || '37').trim().padStart(2, '0');
     const countyFips = (project.countyFips || '105').trim().padStart(3, '0');
+    const placeFips = String((project as any).placeFips || '').trim().padStart(5, '0');
     const stateName = project.state || 'NC';
     const countyName = project.county || 'Lee County';
+    const cityName = String((project as any).city || '').trim();
+    const geoLabel = isCityJurisdiction ? `${cityName || 'City'}, ${stateName}` : `${countyName}, ${stateName}`;
 
-    // ----------------------------------------------------
-    // PARALLEL LIVE FETCHES — Census + BLS + EPA + CDC
-    // (independent network calls; await together for latency win)
-    // ----------------------------------------------------
     const censusVars = [
       'NAME',
       'DP03_0062E',
@@ -202,14 +236,13 @@ export class IngestionService {
       'DP02_0068PE',
       'DP02_0066PE',
     ];
+    const censusGeoQuery = isCityJurisdiction ? `for=place:${placeFips}&in=state:${stateFips}` : `for=county:${countyFips}&in=state:${stateFips}`;
     const censusUrl = censusKey
-      ? `https://api.census.gov/data/2022/acs/acs5/profile?get=${censusVars.join(',')}&for=county:${countyFips}&in=state:${stateFips}&key=${censusKey}`
-      : `https://api.census.gov/data/2022/acs/acs5/profile?get=${censusVars.join(',')}&for=county:${countyFips}&in=state:${stateFips}`;
+      ? `https://api.census.gov/data/2022/acs/acs5/profile?get=${censusVars.join(',')}&${censusGeoQuery}&key=${censusKey}`
+      : `https://api.census.gov/data/2022/acs/acs5/profile?get=${censusVars.join(',')}&${censusGeoQuery}`;
 
     const blsSeriesId = `LAUCN${stateFips.padStart(2, '0')}${countyFips}00000003`;
-    const blsEndpoint = blsKey
-      ? 'https://api.bls.gov/publicAPI/v2/timeseries/data/'
-      : 'https://api.bls.gov/publicAPI/v1/timeseries/data/';
+    const blsEndpoint = blsKey ? 'https://api.bls.gov/publicAPI/v2/timeseries/data/' : 'https://api.bls.gov/publicAPI/v1/timeseries/data/';
     const blsPayload: any = {
       seriesid: [blsSeriesId],
       startyear: '2023',
@@ -219,47 +252,49 @@ export class IngestionService {
 
     const epaUrl = `https://aqs.epa.gov/data/api/annualData/byCounty?email=${epaEmail}&key=${epaKey}&param=44201&bdate=20220101&edate=20221231&state=${stateFips}&county=${countyFips}`;
     const fullCountyFips = `${stateFips}${countyFips}`;
+    const placeLocationId = `${stateFips}${placeFips}`;
     const cdcAuth = cdcKeyId && cdcKeySecret ? Buffer.from(`${cdcKeyId}:${cdcKeySecret}`).toString('base64') : null;
-    const cdcUrl = `https://chronicdata.cdc.gov/resource/cwsq-ngmh.json?$limit=50&countyfips=${fullCountyFips}`;
+    const cdcUrl = isCityJurisdiction ? `https://chronicdata.cdc.gov/resource/cwsq-ngmh.json?$limit=50&locationid=${placeLocationId}` : `https://chronicdata.cdc.gov/resource/cwsq-ngmh.json?$limit=50&countyfips=${fullCountyFips}`;
 
-    // Fail-fast timeouts: Promise.all is gated by the slowest call.
-    // Prefer benchmark fallback over waiting 8–10s on a hung third-party.
     const LIVE_TIMEOUT_MS = 3500;
-    const geoUrl = arcgisToken
-      ? `https://geocode-api.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates?f=json&singleLine=${encodeURIComponent(countyName + ', ' + stateName)}&token=${arcgisToken}`
-      : null;
+    const geocodeLine = isCityJurisdiction ? `${cityName || 'City'}, ${stateName}` : `${countyName}, ${stateName}`;
+    const geoUrl = arcgisToken? `https://geocode-api.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates?f=json&singleLine=${encodeURIComponent(geocodeLine)}&token=${arcgisToken}` : null;
 
-    this.logger.log(`Parallel live API fetch starting for ${countyName}, ${stateName} (Census, BLS, EPA, CDC, ArcGIS geo; ${LIVE_TIMEOUT_MS}ms cap)...`);
+    this.logger.log(`Parallel live API fetch starting for ${geoLabel} [${isCityJurisdiction ? 'CITY place' : 'COUNTY'}] (Census${isCityJurisdiction ? '' : ', BLS, EPA'}, CDC, ArcGIS geo; ${LIVE_TIMEOUT_MS}ms cap)...`);
     const tFetch0 = Date.now();
 
     const [cRes, blsRes, epaRes, cdcRes, geoResEarly] = await Promise.all([
-      this.fetchWithTimeout(censusUrl, {}, LIVE_TIMEOUT_MS).catch((err: any) => {
-        this.logger.warn(`Census API live fetch note: ${err.message}. Using validated county ACS baseline.`);
+      this.fetchWithTimeout(censusUrl, {}, LIVE_TIMEOUT_MS).catch((err: unknown) => {
+        this.logger.warn(`Census API live fetch note: ${getErrorMessage(err)}. Using validated ACS baseline.`);
         return null as Response | null;
       }),
-      this.fetchWithTimeout(blsEndpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(blsPayload),
-      }, LIVE_TIMEOUT_MS).catch((err: any) => {
-        this.logger.warn(`BLS API fetch note: ${err.message}. Using county LAUS benchmark.`);
-        return null as Response | null;
-      }),
-      this.fetchWithTimeout(epaUrl, {}, LIVE_TIMEOUT_MS).catch((err: any) => {
-        this.logger.warn(`EPA API live fetch error: ${err.message}. Using EPA benchmark.`);
-        return null as Response | null;
-      }),
+      isCityJurisdiction
+        ? Promise.resolve(null as Response | null)
+        : this.fetchWithTimeout(blsEndpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(blsPayload),
+          }, LIVE_TIMEOUT_MS).catch((err: unknown) => {
+            this.logger.warn(`BLS API fetch note: ${getErrorMessage(err)}. Using county LAUS benchmark.`);
+            return null as Response | null;
+          }),
+      isCityJurisdiction
+        ? Promise.resolve(null as Response | null)
+        : this.fetchWithTimeout(epaUrl, {}, LIVE_TIMEOUT_MS).catch((err: unknown) => {
+            this.logger.warn(`EPA API live fetch error: ${getErrorMessage(err)}. Using EPA benchmark.`);
+            return null as Response | null;
+          }),
       cdcAuth
         ? this.fetchWithTimeout(cdcUrl, {
             headers: { Authorization: `Basic ${cdcAuth}`, Accept: 'application/json' },
-          }, LIVE_TIMEOUT_MS).catch((err: any) => {
-            this.logger.warn(`CDC PLACES API fetch note: ${err.message}. Using validated county health baselines.`);
+          }, LIVE_TIMEOUT_MS).catch((err: unknown) => {
+            this.logger.warn(`CDC PLACES API fetch note: ${getErrorMessage(err)}. Using validated health baselines.`);
             return null as Response | null;
           })
         : Promise.resolve(null as Response | null),
       geoUrl
-        ? this.fetchWithTimeout(geoUrl, {}, LIVE_TIMEOUT_MS).catch((err: any) => {
-            this.logger.warn(`ArcGIS geocode note: ${err.message}`);
+        ? this.fetchWithTimeout(geoUrl, {}, LIVE_TIMEOUT_MS).catch((err: unknown) => {
+            this.logger.warn(`ArcGIS geocode note: ${getErrorMessage(err)}`);
             return null as Response | null;
           })
         : Promise.resolve(null as Response | null),
@@ -318,8 +353,8 @@ export class IngestionService {
           this.logger.log(`Successfully fetched live US Census ACS data for ${countyName}, ${stateName}.`);
         }
       }
-    } catch (err: any) {
-      this.logger.warn(`Census API parse note: ${err.message}. Using validated county ACS baseline.`);
+    } catch (err: unknown) {
+      this.logger.warn(`Census API parse note: ${getErrorMessage(err)}. Using validated county ACS baseline.`);
     }
 
     // Always push Census records (either live or validated baseline)
@@ -492,81 +527,91 @@ export class IngestionService {
     );
 
     // ----------------------------------------------------
-    // 2. LIVE BUREAU OF LABOR STATISTICS (BLS) — from parallel fetch
+    // 2. LIVE BUREAU OF LABOR STATISTICS (BLS) — county LAUS only
+    // CITY jurisdiction: skip entirely (no city LAUS series)
     // ----------------------------------------------------
     let unempRate = 3.3;
     let blsIsLive = false;
     let blsPeriod = '2024';
 
-    try {
-      if (blsRes?.ok) {
-        const blsJson = await blsRes.json();
-        const latestItem = blsJson?.Results?.series?.[0]?.data?.[0];
-        if (latestItem && latestItem.value) {
-          unempRate = Number(latestItem.value);
-          blsIsLive = true;
-          blsPeriod = `${latestItem.periodName || 'Month'} ${latestItem.year}`;
-          this.logger.log(`BLS Live data fetched: ${unempRate}% (${blsPeriod}).`);
+    if (!isCityJurisdiction) {
+      try {
+        if (blsRes?.ok) {
+          const blsJson = await blsRes.json();
+          const latestItem = blsJson?.Results?.series?.[0]?.data?.[0];
+          if (latestItem && latestItem.value) {
+            unempRate = Number(latestItem.value);
+            blsIsLive = true;
+            blsPeriod = `${latestItem.periodName || 'Month'} ${latestItem.year}`;
+            this.logger.log(`BLS Live data fetched: ${unempRate}% (${blsPeriod}).`);
+          }
         }
+      } catch (err: unknown) {
+        this.logger.warn(`BLS API parse note: ${getErrorMessage(err)}. Using county LAUS benchmark.`);
       }
-    } catch (err: any) {
-      this.logger.warn(`BLS API parse note: ${err.message}. Using county LAUS benchmark.`);
+
+      recordsToInsert.push({
+        projectId,
+        source: ApiDataSource.BLS,
+        categoryKey: 'Employment & Labor',
+        metricKey: 'unemployment_rate',
+        metricLabel: 'Unemployment Rate (%)',
+        extractedValue: unempRate,
+        unit: '%',
+        rawResponse: {
+          source: blsIsLive ? `BLS LAUS Live API (${blsKey ? 'v2' : 'v1 Free'})` : 'BLS Benchmark',
+          period: blsPeriod,
+          rate: unempRate,
+          live: blsIsLive,
+        },
+        ingestionStatus: blsIsLive ? 'FETCHED' : 'BENCHMARK',
+      });
+    } else {
+      this.logger.log('CITY jurisdiction — skipping BLS LAUS (county-only series).');
     }
 
-    recordsToInsert.push({
-      projectId,
-      source: ApiDataSource.BLS,
-      categoryKey: 'Employment & Labor',
-      metricKey: 'unemployment_rate',
-      metricLabel: 'Unemployment Rate (%)',
-      extractedValue: unempRate,
-      unit: '%',
-      rawResponse: {
-        source: blsIsLive ? `BLS LAUS Live API (${blsKey ? 'v2' : 'v1 Free'})` : 'BLS Benchmark',
-        period: blsPeriod,
-        rate: unempRate,
-        live: blsIsLive,
-      },
-      ingestionStatus: blsIsLive ? 'FETCHED' : 'BENCHMARK',
-    });
-
     // ----------------------------------------------------
-    // 3. LIVE EPA AIRDATA AQS API — from parallel fetch
+    // 3. LIVE EPA AIRDATA AQS API — county byCounty only
+    // CITY jurisdiction: skip entirely
     // ----------------------------------------------------
-    try {
-      if (epaRes?.ok) {
-        const epaJson = await epaRes.json();
-        const firstRecord = epaJson?.Data?.[0];
-        const ozoneMean = firstRecord?.arithmetic_mean ? Number((firstRecord.arithmetic_mean * 1000).toFixed(1)) : 44.8;
-        const goodDaysPct = 92.4;
+    if (!isCityJurisdiction) {
+      try {
+        if (epaRes?.ok) {
+          const epaJson = await epaRes.json();
+          const firstRecord = epaJson?.Data?.[0];
+          const ozoneMean = firstRecord?.arithmetic_mean ? Number((firstRecord.arithmetic_mean * 1000).toFixed(1)) : 44.8;
+          const goodDaysPct = 92.4;
 
+          recordsToInsert.push({
+            projectId,
+            source: ApiDataSource.EPA,
+            categoryKey: 'Infrastructure',
+            metricKey: 'air_quality_index_good_days',
+            metricLabel: 'EPA Air Quality Good Days Index (%)',
+            extractedValue: goodDaysPct,
+            unit: '%',
+            rawResponse: { source: 'EPA AQS Live API', ozone_ppb: ozoneMean, good_pct: goodDaysPct },
+            ingestionStatus: 'FETCHED',
+          });
+        } else {
+          throw new Error(epaRes ? `EPA response status: ${epaRes.status}` : 'EPA fetch failed');
+        }
+      } catch (err: unknown) {
+        this.logger.warn(`EPA API live fetch error: ${getErrorMessage(err)}. Using EPA benchmark.`);
         recordsToInsert.push({
           projectId,
           source: ApiDataSource.EPA,
-          categoryKey: 'Infrastructure',
+          categoryKey: 'Healthcare & Wellness',
           metricKey: 'air_quality_index_good_days',
           metricLabel: 'EPA Air Quality Good Days Index (%)',
-          extractedValue: goodDaysPct,
+          extractedValue: 92.4,
           unit: '%',
-          rawResponse: { source: 'EPA AQS Live API', ozone_ppb: ozoneMean, good_pct: goodDaysPct },
-          ingestionStatus: 'FETCHED',
+          rawResponse: { source: 'EPA AirData Annual Summary Report', good_pct: 92.4, median_aqi: 38 },
+          ingestionStatus: 'BENCHMARK',
         });
-      } else {
-        throw new Error(epaRes ? `EPA response status: ${epaRes.status}` : 'EPA fetch failed');
       }
-    } catch (err: any) {
-      this.logger.warn(`EPA API live fetch error: ${err.message}. Using EPA benchmark.`);
-      recordsToInsert.push({
-        projectId,
-        source: ApiDataSource.EPA,
-        categoryKey: 'Healthcare & Wellness',
-        metricKey: 'air_quality_index_good_days',
-        metricLabel: 'EPA Air Quality Good Days Index (%)',
-        extractedValue: 92.4,
-        unit: '%',
-        rawResponse: { source: 'EPA AirData Annual Summary Report', good_pct: 92.4, median_aqi: 38 },
-        ingestionStatus: 'BENCHMARK',
-      });
+    } else {
+      this.logger.log('CITY jurisdiction — skipping EPA AQS byCounty.');
     }
 
     // ----------------------------------------------------
@@ -595,10 +640,12 @@ export class IngestionService {
           this.logger.log(`CDC PLACES live fetch successful. Uninsured: ${cdcUninsured}%, Fair/Poor Health: ${cdcFairPoorHealth}%, Food Insecurity: ${cdcFoodInsecurity}%, Routine Checkup: ${cdcRoutineCheckup}%`);
         }
       }
-    } catch (err: any) {
-      this.logger.warn(`CDC PLACES API parse note: ${err.message}. Using validated county health baselines.`);
+    } catch (err: unknown) {
+      this.logger.warn(`CDC PLACES API parse note: ${getErrorMessage(err)}. Using validated health baselines.`);
     }
 
+    // CITY: only stage CDC when place-level live data returned (skip county benchmarks)
+    if (!isCityJurisdiction || cdcLive) {
     recordsToInsert.push(
       {
         projectId,
@@ -645,10 +692,15 @@ export class IngestionService {
         ingestionStatus: cdcLive ? 'FETCHED' : 'BENCHMARK',
       },
     );
+    } else if (isCityJurisdiction) {
+      this.logger.log('CITY jurisdiction — no CDC place-level rows; skipping county health benchmarks.');
+    }
 
     // ----------------------------------------------------
     // 4. MAJOR ROUTES (NCDOT GIS / REGIONAL HIGHWAY NETWORK)
+    // County / NC-oriented hardcoded corridors — skip for CITY
     // ----------------------------------------------------
+    if (!isCityJurisdiction) {
     recordsToInsert.push(
       {
         projectId,
@@ -706,6 +758,7 @@ export class IngestionService {
         ingestionStatus: 'FETCHED',
       },
     );
+    }
 
     // ----------------------------------------------------
     // 5. PUBLIC TRANSIT & FACILITIES (Live ArcGIS Location Services)
@@ -778,8 +831,8 @@ export class IngestionService {
         }
 
         this.logger.log(`ArcGIS live query successful. Airports: ${arcgisAirports.length}, Trains: ${arcgisTrainStations.length}, Parks: ${arcgisParks.length}, Hospitals: ${arcgisHospitals.length}`);
-      } catch (err: any) {
-        this.logger.warn(`ArcGIS query error: ${err.message}. Using validated transit benchmarks.`);
+      } catch (err: unknown) {
+        this.logger.warn(`ArcGIS query error: ${getErrorMessage(err)}. Using validated transit benchmarks.`);
       }
     }
 
@@ -949,11 +1002,17 @@ export class IngestionService {
             matchedVal = 9;
             sourceLabel = 'NCDOT STIP Open Data 2024-2033';
           } else if (nodeLabel.includes('w/o vehicle') || nodeLabel.includes('without vehicle')) {
-            matchedVal = 4.0;
-            sourceLabel = 'US Census Bureau ACS 5-Year DP04';
+            const censusRec = recordsToInsert.find((r) => r.metricKey === 'hh_without_vehicle');
+            matchedVal = censusRec?.extractedValue;
+            sourceLabel = censusRec
+              ? (censusRec.rawResponse?.source || 'US Census Bureau ACS 5-Year DP04')
+              : '';
           } else if (nodeLabel.includes('commute time')) {
-            matchedVal = 24.1;
-            sourceLabel = 'US Census QuickFacts';
+            const censusRec = recordsToInsert.find((r) => r.metricKey === 'average_commute_time');
+            matchedVal = censusRec?.extractedValue ?? 24.1;
+            sourceLabel = censusRec
+              ? (censusRec.rawResponse?.source || 'US Census QuickFacts')
+              : 'US Census QuickFacts';
           }
           // D. Phase 2 Questionnaire Policy & Qualitative Rows
           else if (nodeLabel.includes('bike and ped') || nodeLabel.includes('pedestrian plan')) {
@@ -1129,8 +1188,20 @@ export class IngestionService {
             matchedVal = 8.7;
             sourceLabel = 'US Census Bureau ACS 5-Year DP03';
           } else if (nodeLabel.includes('county health factors')) {
-            matchedVal = 72;
-            sourceLabel = 'County Health Rankings & Roadmaps';
+            // Composite from CDC PLACES (Kathleen free list); not County Health Rankings
+            const cdcHealth = recordsToInsert.filter((r) =>
+              String(r.source).toUpperCase().includes('CDC'),
+            );
+            if (cdcHealth.length > 0) {
+              const avg =
+                cdcHealth.reduce((s, r) => s + Number(r.extractedValue || 0), 0) /
+                cdcHealth.length;
+              matchedVal = Number(avg.toFixed(1));
+              sourceLabel = 'CDC PLACES Live SODA API';
+            } else {
+              matchedVal = undefined;
+              sourceLabel = '';
+            }
           } else if (nodeLabel.includes('structure year built') || nodeLabel.includes('year built')) {
             matchedVal = 1998;
             sourceLabel = 'US Census Bureau ACS 5-Year DP04';
@@ -1138,8 +1209,9 @@ export class IngestionService {
             matchedVal = 28.4;
             sourceLabel = 'US Census Bureau ACS 5-Year DP04';
           } else if (nodeLabel.includes('diversity index')) {
-            matchedVal = 61.2;
-            sourceLabel = 'US Census Bureau ACS 5-Year DP05';
+            // Licensed ESRI leftover — cleared by ADMIN_EMPTY policy below
+            matchedVal = undefined;
+            sourceLabel = '';
           } else if (nodeLabel.includes('roadways (stip)')) {
             matchedVal = 9;
             sourceLabel = 'NCDOT STIP Open Data 2024-2033';
@@ -1182,7 +1254,26 @@ export class IngestionService {
             }
           }
 
-          if (matchedVal !== undefined && !isNaN(matchedVal)) {
+          // Exclusive Master Sources: policy — never cross-fill; leave ESRI/CoStar/Moody empty
+          const policy = resolveMetricFillPolicy(nodeLabel);
+          if (policy.mode === 'ADMIN_EMPTY' || isAdminEmptyMetric(nodeLabel)) {
+            matchedVal = undefined;
+          } else {
+            const fromQuestionnaire =
+              sourceLabel.toLowerCase().includes('questionnaire') ||
+              sourceLabel.toLowerCase().includes('phase 2');
+            if (policy.mode === 'QUESTIONNAIRE' && !fromQuestionnaire) {
+              // Inventory rows: only client questionnaire — no ArcGIS/default stand-ins
+              matchedVal = undefined;
+            } else if (
+              matchedVal !== undefined &&
+              !allowsProposedSource(nodeLabel, sourceLabel, fromQuestionnaire)
+            ) {
+              matchedVal = undefined;
+            }
+          }
+
+          if (matchedVal !== undefined && matchedVal !== null && !Number.isNaN(Number(matchedVal))) {
             matrixUpserts.push({
               projectId,
               nodeId: node.id,
@@ -1215,6 +1306,7 @@ export class IngestionService {
 
     // Update project status to CALCULATED
     await project.update({ status: ProjectStatus.CALCULATED });
+    await this.ordersService?.syncTimelineForProject(projectId, ProjectStatus.CALCULATED);
 
     this.logger.log(
       `Ingestion & Scorecard Calculation Complete. Staged: ${recordsToInsert.length}, Populated Base: ${populatedMatrixCount}, Rows Calculated: ${calcResult.calculatedRows}, Overall Score: ${calcResult.overallScore}/10.`,

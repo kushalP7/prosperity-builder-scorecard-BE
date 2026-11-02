@@ -50,7 +50,7 @@ export class SettingsService {
         settings = await this.settingsModel.findByPk(settings.id, {
           include: [{ model: RatingBand, as: 'ratingBands' }],
         });
-      } catch (error) {
+      } catch (error: unknown) {
         await transaction.rollback();
         throw error;
       }
@@ -88,7 +88,6 @@ export class SettingsService {
         { transaction },
       );
 
-      // Re-create rating bands if provided in update
       if (dto.ratingBands && dto.ratingBands.length > 0) {
         await this.ratingBandModel.destroy({
           where: { settingsId: settings.id },
@@ -109,7 +108,7 @@ export class SettingsService {
 
       await transaction.commit();
       return this.getSettings();
-    } catch (error) {
+    } catch (error: unknown) {
       await transaction.rollback();
       throw error;
     }

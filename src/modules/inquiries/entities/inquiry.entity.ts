@@ -9,6 +9,8 @@ import {
   UpdatedAt,
 } from 'sequelize-typescript';
 
+export type InquiryStatus = 'pending' | 'invited' | 'registered' | 'closed';
+
 @Table({
   tableName: 'Inquiries',
   timestamps: true,
@@ -80,18 +82,40 @@ export class Inquiry extends Model<Inquiry> {
   })
   organizationType: string;
 
+  /** Exactly one: county | city | partner_vendor */
+  @Column({
+    type: DataType.STRING(32),
+    allowNull: false,
+    defaultValue: 'partner_vendor',
+  })
+  leadRole: string;
+
   @Column({
     type: DataType.TEXT,
     allowNull: true,
   })
   notes?: string;
 
+  /** pending | invited | registered | closed (legacy contacted/qualified mapped as closed-ish) */
   @Default('pending')
   @Column({
-    type: DataType.ENUM('pending', 'contacted', 'qualified', 'closed'),
+    type: DataType.STRING(32),
     allowNull: false,
   })
-  status: string;
+  status: InquiryStatus | string;
+
+  /** Linked customer user after portal invite */
+  @Column({
+    type: DataType.UUID,
+    allowNull: true,
+  })
+  userId: string | null;
+
+  @Column({
+    type: DataType.DATE,
+    allowNull: true,
+  })
+  invitedAt: Date | null;
 
   @CreatedAt
   createdAt: Date;

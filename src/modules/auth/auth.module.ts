@@ -1,6 +1,8 @@
-import { Module, forwardRef } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 import { SequelizeModule } from '@nestjs/sequelize';
 import { User } from '../users/entities/user.entity';
+import { Order } from '../orders/entities/order.entity';
+import { Inquiry } from '../inquiries/entities/inquiry.entity';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { PasswordService } from './services/password.service';
@@ -10,7 +12,7 @@ import { RolesGuard } from './guards/roles.guard';
 
 @Module({
   imports: [
-    SequelizeModule.forFeature([User]),
+    SequelizeModule.forFeature([User, Order, Inquiry]),
   ],
   controllers: [AuthController],
   providers: [

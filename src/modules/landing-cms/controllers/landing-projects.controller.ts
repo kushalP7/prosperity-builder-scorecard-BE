@@ -1,16 +1,18 @@
 import { Controller, Get, Post, Put, Delete, Body, Param, Query } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiQuery } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiQuery, ApiBearerAuth } from '@nestjs/swagger';
 import { LandingProjectsService } from '../services/landing-projects.service';
 import { CreateLandingProjectDto } from '../dto/create-landing-project.dto';
 import { UpdateLandingProjectDto } from '../dto/update-landing-project.dto';
+import { Public } from '../../auth/decorators/public.decorator';
 
 @ApiTags('Landing CMS Projects')
 @Controller(['api/v1/landing-cms/projects', 'landing-cms/projects'])
 export class LandingProjectsController {
   constructor(private readonly projectsService: LandingProjectsService) {}
 
+  @Public()
   @Get()
-  @ApiOperation({ summary: 'Get all landing portfolio projects' })
+  @ApiOperation({ summary: 'Get all landing portfolio projects (public)' })
   @ApiQuery({ name: 'category', required: false })
   @ApiQuery({ name: 'status', required: false })
   @ApiQuery({ name: 'featured', required: false, type: Boolean })
@@ -39,24 +41,28 @@ export class LandingProjectsController {
     });
   }
 
+  @Public()
   @Get(':id')
-  @ApiOperation({ summary: 'Get landing project by ID' })
+  @ApiOperation({ summary: 'Get landing project by ID (public)' })
   async findById(@Param('id') id: string) {
     return this.projectsService.findById(id);
   }
 
+  @ApiBearerAuth()
   @Post()
   @ApiOperation({ summary: 'Create a new landing portfolio project' })
   async create(@Body() dto: CreateLandingProjectDto) {
     return this.projectsService.create(dto);
   }
 
+  @ApiBearerAuth()
   @Put(':id')
   @ApiOperation({ summary: 'Update an existing landing portfolio project' })
   async update(@Param('id') id: string, @Body() dto: UpdateLandingProjectDto) {
     return this.projectsService.update(id, dto);
   }
 
+  @ApiBearerAuth()
   @Delete(':id')
   @ApiOperation({ summary: 'Delete a landing portfolio project' })
   async delete(@Param('id') id: string) {

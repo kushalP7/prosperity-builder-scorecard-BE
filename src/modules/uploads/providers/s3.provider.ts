@@ -5,11 +5,21 @@ import {
   HeadBucketCommand,
   CreateBucketCommand,
   PutBucketPolicyCommand,
+  GetObjectCommand,
+  HeadObjectCommand,
 } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { Upload } from '@aws-sdk/lib-storage';
 import * as crypto from 'crypto';
 import * as path from 'path';
 import { IStorageProvider, StorageUploadResult } from '../interfaces/storage.interface';
+import {
+  getErrorCode,
+  getErrorHttpStatus,
+  getErrorMessage,
+  getErrorName,
+  getErrorStack,
+} from '../../../common/errors';
 
 @Injectable()
 export class S3StorageProvider implements IStorageProvider {
@@ -51,12 +61,12 @@ export class S3StorageProvider implements IStorageProvider {
     );
   }
 
-  private formatStorageError(error: any): string {
-    const msg = error?.message || '';
-    const code = error?.code || error?.name || '';
+  private formatStorageError(error: unknown): string {
+    const msg = getErrorMessage(error, '');
+    const code = getErrorCode(error) || getErrorName(error) || '';
 
     // Log the full technical stack trace and codes in server logs for developers
-    this.logger.error(`[Storage Tech Details] Code: "${code}", Message: "${msg}"`, error?.stack);
+    this.logger.error(`[Storage Tech Details] Code: "${code}", Message: "${msg}"`, getErrorStack(error));
 
     // 1. Connection Refused or Reset (Storage container offline or network drop)
     if (code === 'ECONNREFUSED' || msg.includes('ECONNREFUSED') || code === 'ECONNRESET' || msg.includes('ECONNRESET')) {
@@ -87,9 +97,9 @@ export class S3StorageProvider implements IStorageProvider {
     try {
       await this.s3Client.send(new HeadBucketCommand({ Bucket: this.bucket }));
       this.bucketChecked = true;
-    } catch (headErr: any) {
-      const msg = headErr?.message || '';
-      const code = headErr?.code || headErr?.name || '';
+    } catch (headErr: unknown) {
+      const msg = getErrorMessage(headErr, '');
+      const code = getErrorCode(headErr) || getErrorName(headErr) || '';
 
       // If connection refused or reset, stop immediately and return clean error
       if (code === 'ECONNREFUSED' || msg.includes('ECONNREFUSED') || code === 'ECONNRESET' || msg.includes('ECONNRESET')) {
@@ -120,8 +130,8 @@ export class S3StorageProvider implements IStorageProvider {
           }),
         );
         this.logger.log(`Applied public-read policy on bucket "${this.bucket}".`);
-      } catch (err: any) {
-        this.logger.warn(`Notice while auto-creating bucket: ${err.message}`);
+      } catch (err: unknown) {
+        this.logger.warn(`Notice while auto-creating bucket: ${getErrorMessage(err)}`);
       }
       this.bucketChecked = true;
     }
@@ -221,9 +231,9 @@ export class S3StorageProvider implements IStorageProvider {
         bytes: file.size || file.buffer.length,
         originalName: file.originalname,
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
       const friendlyMessage = this.formatStorageError(error);
-      this.logger.error(`S3/MinIO upload failed: ${friendlyMessage}`, error.stack);
+      this.logger.error(`S3/MinIO upload failed: ${friendlyMessage}`, getErrorStack(error));
       throw new BadRequestException(friendlyMessage);
     }
   }
@@ -241,7 +251,7 @@ export class S3StorageProvider implements IStorageProvider {
         }),
       );
       return { success: true, result: 'ok' };
-    } catch (error: any) {
+    } catch (error: unknown) {
       const friendlyMessage = this.formatStorageError(error);
       this.logger.error(`Failed to delete object "${key}" from S3/MinIO: ${friendlyMessage}`);
       return { success: false, result: friendlyMessage };
@@ -254,5 +264,47 @@ export class S3StorageProvider implements IStorageProvider {
       return { success: false, result: 'Not a recognized S3/MinIO URL' };
     }
     return this.deleteFile(key);
+  }
+
+  /** True if the object exists at the given key. */
+  async objectExists(key: string): Promise<boolean> {
+    const cleanKey = key.replace(/^\/+/, '');
+    try {
+      await this.s3Client.send(
+        new HeadObjectCommand({
+          Bucket: this.bucket,
+          Key: cleanKey,
+        }),
+      );
+      return true;
+    } catch (err: unknown) {
+      const status = getErrorHttpStatus(err);
+      const name = getErrorName(err) || getErrorCode(err) || '';
+      if (status === 404 || name === 'NotFound' || name === 'NoSuchKey') {
+        return false;
+      }
+      this.logger.warn(`HeadObject failed for "${cleanKey}": ${getErrorMessage(err)}`);
+      throw err;
+    }
+  }
+
+  /**
+   * Create a time-limited signed GET URL for a private object.
+   * Default expiry: 7 days (604800 seconds). Cap at 7 days for AWS SigV4.
+   */
+  async getSignedDownloadUrl(key: string, expiresInSeconds = 60 * 60 * 24 * 7): Promise<string> {
+    const cleanKey = key.replace(/^\/+/, '');
+    const expiresIn = Math.min(Math.max(expiresInSeconds, 60), 60 * 60 * 24 * 7);
+
+    return getSignedUrl(
+      this.s3Client,
+      new GetObjectCommand({
+        Bucket: this.bucket,
+        Key: cleanKey,
+        ResponseContentDisposition: 'inline',
+        ResponseContentType: 'application/pdf',
+      }),
+      { expiresIn },
+    );
   }
 }

@@ -184,7 +184,6 @@ export class TemplatesService {
     if (!section.versionGroupId) {
       await section.update({ versionGroupId: section.id });
     }
-    // Automatically seed the 7 default scorecard columns for this new section
     await this.createDefaultColumnsForSection(section.id);
     return this.findSectionById(section.id);
   }
@@ -220,7 +219,6 @@ export class TemplatesService {
       1;
     const newVersion = currentMaxVersion + 1;
 
-    // Capture current working state to become the snapshot of the new version
     const newSnapshot = {
       categories: (sourceSection.categories || []).map((cat) => ({
         ...cat.toJSON(),
@@ -231,24 +229,19 @@ export class TemplatesService {
 
     const transaction = await this.sequelize.transaction();
     try {
-      // 1. Mark existing versions in this group as not latest and archived
       await this.sectionModel.update(
         { isLatest: false, status: 'archived' },
         { where: { versionGroupId }, transaction },
       );
 
-      // If sourceSection doesn't have a snapshot, initialize it before archiving
       if (!sourceSection.snapshot) {
         await sourceSection.update({ snapshot: newSnapshot }, { transaction });
       }
 
-      // 2. Create the new section version
       const newSection = await this.sectionModel.create(
         {
           label: sourceSection.label,
           description: sourceSection.description,
-          accentColor: sourceSection.accentColor,
-          icon: sourceSection.icon,
           version: newVersion,
           isLatest: true,
           status: 'active',
@@ -259,7 +252,6 @@ export class TemplatesService {
         { transaction },
       );
 
-      // 3. Clone columns for this section
       for (const col of sourceSection.columns || []) {
         const colData = col.toJSON();
         delete colData.id;
@@ -269,7 +261,6 @@ export class TemplatesService {
         await this.columnModel.create(colData, { transaction });
       }
 
-      // 4. Clone categories and groups
       for (const cat of sourceSection.categories || []) {
         const catData = cat.toJSON();
         delete catData.id;
@@ -292,7 +283,6 @@ export class TemplatesService {
 
       await transaction.commit();
 
-      // Return the new complete section
       const result = await this.sectionModel.findByPk(newSection.id, {
         include: [
           { model: TemplateColumn, as: 'columns' },
@@ -300,7 +290,7 @@ export class TemplatesService {
         ],
       });
       return result!;
-    } catch (err) {
+    } catch (err: unknown) {
       await transaction.rollback();
       throw err;
     }
@@ -348,7 +338,6 @@ export class TemplatesService {
       if (validation.max !== undefined && validation.max !== null) colData.validationMax = validation.max;
     }
 
-    // Determine sectionId: check if targetId is a Section or a Category
     let sectionId = targetId;
     const cat = await this.categoryModel.findByPk(targetId);
     if (cat) {
@@ -375,7 +364,6 @@ export class TemplatesService {
     }
     await column.update(colData);
 
-    // If column name changed, cascade update to any formula expressions in the same section
     if (colData.name && oldName && oldName !== colData.name) {
       const oldSafeName = oldName.replace(/[^a-zA-Z0-9_]/g, '_');
       const newSafeName = colData.name.replace(/[^a-zA-Z0-9_]/g, '_');
