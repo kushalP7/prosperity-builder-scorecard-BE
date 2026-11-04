@@ -4,7 +4,6 @@ import { Order } from './entities/order.entity';
 import { PaymentAttempt } from './entities/payment-attempt.entity';
 import { OrdersService } from './orders.service';
 import { OrdersController } from './orders.controller';
-import { StripeWebhookController } from './stripe-webhook.controller';
 import { SettingsModule } from '../settings/settings.module';
 import { ProjectsModule } from '../projects/projects.module';
 import { UsersModule } from '../users/users.module';
@@ -21,7 +20,7 @@ import { Project } from '../projects/entities/project.entity';
     AuthModule,
     EmailModule,
   ],
-  controllers: [OrdersController, StripeWebhookController],
+  controllers: [OrdersController],
   providers: [OrdersService],
   exports: [OrdersService],
 })

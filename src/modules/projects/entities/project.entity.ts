@@ -96,7 +96,20 @@ export class Project extends Model {
   @Column({ type: DataType.DATE, allowNull: true, defaultValue: null })
   deletedAt: Date | null;
 
-  /** Certified executive PDF released to the customer on publish */
+  /** Auto-generated Initial Scorecard PDF (created on publish) */
+  @Column({ type: DataType.TEXT, allowNull: true })
+  initialReportUrl: string | null;
+
+  @Column({ type: DataType.STRING, allowNull: true })
+  initialReportPublicId: string | null;
+
+  @Column({ type: DataType.STRING, allowNull: true })
+  initialReportFileName: string | null;
+
+  @Column({ type: DataType.DATE, allowNull: true })
+  initialReportGeneratedAt: Date | null;
+
+  /** Detailed / certified executive PDF (admin upload ~15–30 days after publish) */
   @Column({ type: DataType.TEXT, allowNull: true })
   certifiedReportUrl: string | null;
 

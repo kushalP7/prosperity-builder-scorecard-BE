@@ -47,10 +47,10 @@ export class Order extends Model {
   @Column({ type: DataType.UUID, allowNull: true })
   customerUserId: string;
 
-  @Column({ type: DataType.STRING, allowNull: true, defaultValue: 'stub' })
-  provider: string; // stub | stripe | invoice
+  @Column({ type: DataType.STRING, allowNull: true, defaultValue: 'invoice' })
+  provider: string; // invoice (offline); legacy: stub | stripe
 
-  /** Stripe PaymentIntent id (pi_…) when provider is stripe */
+  /** Legacy Stripe PaymentIntent id — unused for new invoice-only checkout */
   @Column({ type: DataType.STRING, allowNull: true, unique: true })
   stripePaymentIntentId: string;
 

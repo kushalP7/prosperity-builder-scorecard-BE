@@ -23,25 +23,15 @@ npm run start:dev
 
 The NestJS backend server will run on **`http://localhost:3001`**.
 
-### Payments: stub vs Stripe (`PAYMENT_PROVIDER`)
+### Payments: Invoice / mail check (offline only)
+
+Checkout always creates a **pending invoice** order and emails a PDF. Package access unlocks only when a **super_admin** calls `POST /api/v1/orders/:id/mark-paid`.
 
 | Variable | Purpose |
 | :--- | :--- |
-| `PAYMENT_PROVIDER` | `stub` (default local) or `stripe` — works locally when set to `stripe` + test keys |
-| `STRIPE_SECRET_KEY` | Required when `PAYMENT_PROVIDER=stripe` (`sk_test_…` for sandbox) |
-| `STRIPE_WEBHOOK_SECRET` | Webhook signing secret (`whsec_…`); optional locally (confirm-payment still unlocks) |
-| `ALLOW_STUB_PAY` | Optional admin stub override while using Stripe (non-production only) |
-| `FRONTEND_URL` | Optional; return URLs / docs |
+| `FRONTEND_URL` | Used in invoice / payment emails (login CTA) |
 
-**Local without Stripe:** `PAYMENT_PROVIDER=stub` → fake card checkout.  
-**Local with Stripe sandbox:** `PAYMENT_PROVIDER=stripe` + test keys + FE `VITE_STRIPE_PUBLISHABLE_KEY`.  
-**Production:** `PAYMENT_PROVIDER=stripe` (stub pay is always blocked).
-
-Checkout UI reads `GET /api/v1/orders/payment-config` to pick Stripe Element vs fake card.
-
-Webhook (when using Stripe): `https://<your-api-host>/api/v1/stripe/webhook`  
-Events: `payment_intent.succeeded`, `payment_intent.payment_failed`  
-Local: `stripe listen --forward-to localhost:3001/api/v1/stripe/webhook`
+Stripe and stub card checkout have been removed. One-time DB cleanup for legacy card test orders: `scripts/cleanup-legacy-card-orders.sql`.
 
 Checkout requires JWT. Amounts always come from Settings.
 

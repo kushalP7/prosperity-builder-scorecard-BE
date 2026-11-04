@@ -18,6 +18,7 @@ import { MilestoneType } from '../payments/entities/payment-milestone.entity';
 import { OrdersService } from '../orders/orders.service';
 import { UploadsService } from '../uploads/uploads.service';
 import { getErrorMessage } from '../../common/errors';
+import { buildInitialScorecardPdf, buildTopLowPerformingPdf } from '../../common/initial-scorecard-pdf';
 
 export type CertifiedReportPayload = {
   reportUrl: string;
@@ -287,65 +288,181 @@ export class CalculatorService {
     return this.getRollup(projectId);
   }
 
-  async publishScorecard(projectId: string, report?: CertifiedReportPayload): Promise<any> {
+  async publishScorecard(projectId: string, _report?: CertifiedReportPayload): Promise<any> {
     const project = await this.projectModel.findByPk(projectId);
     if (!project) throw new NotFoundException(`Project ${projectId} not found`);
 
-    const next = this.assertReportPayload(report);
-
     const rollup = await this.getRollup(projectId);
+    if (!rollup?.categoryScores?.length) {
+      throw new BadRequestException('Cannot publish: scorecard has no category scores yet. Calculate first.');
+    }
+
+    if (!this.uploadsService) {
+      throw new BadRequestException('File storage is not configured; cannot generate the initial scorecard PDF.');
+    }
+
+    const jurisdictionLabel = [project.city, project.county, project.state].filter(Boolean).join(', ');
+    const safeName = String(project.name || 'Scorecard')
+      .replace(/[^a-zA-Z0-9._-]+/g, '_')
+      .slice(0, 60);
+    const fileName = `Initial-Scorecard-${safeName}.pdf`;
+
+    const pdfBuffer = await buildInitialScorecardPdf({
+      projectName: project.name,
+      jurisdictionLabel: jurisdictionLabel || 'North Carolina',
+      year: project.year,
+      overallScoreTenScale: Number(rollup.overallScoreTenScale) || 0,
+      performanceBand: String(rollup.performanceBand || 'Average'),
+      categoryScores: (rollup.categoryScores || []).map((c: any) => ({
+        categoryKey: c.categoryKey,
+        categoryLabel: c.categoryLabel || c.categoryKey,
+        scoreTenScale: Number(c.scoreTenScale) || 0,
+        scorePercentage: Number(c.scorePercentage) || 0,
+        rank: c.rank,
+      })),
+    });
+
+    const previousUrl = project.initialReportUrl;
+    const previousPublicId = project.initialReportPublicId;
+    const wasAlreadyPublished = project.status === ProjectStatus.PUBLISHED;
+
+    const uploaded = await this.uploadsService.uploadBuffer(
+      pdfBuffer,
+      fileName,
+      'application/pdf',
+      'reports',
+    );
 
     await this.paymentsService.advanceMilestone(projectId, MilestoneType.FINAL_30);
 
     await project.update({
       status: ProjectStatus.PUBLISHED,
-      certifiedReportUrl: next.reportUrl,
-      certifiedReportPublicId: next.reportPublicId,
-      certifiedReportFileName: next.reportFileName,
-      certifiedReportUploadedAt: new Date(),
+      initialReportUrl: uploaded.url,
+      initialReportPublicId: uploaded.public_id,
+      initialReportFileName: uploaded.originalName || fileName,
+      initialReportGeneratedAt: new Date(),
     });
+    await project.reload();
     await this.ordersService?.syncTimelineForProject(projectId, ProjectStatus.PUBLISHED);
 
-    this.ordersService?.sendCertifiedReportEmail(projectId, { isResend: false }).then((r) => {
-      if (r.sent) this.logger.log(`Scorecard report emailed to ${r.to} for project ${projectId}`);
-      else if (r.skipped) this.logger.log(`Scorecard report email skipped for project ${projectId}: ${r.reason}`);
-    }).catch((err: unknown) => {
-      this.logger.warn(`Scorecard report email soft-failed after publish for ${projectId}: ${getErrorMessage(err)}`);
-    });
+    if (this.uploadsService && previousUrl && previousUrl !== uploaded.url) {
+      try {
+        if (previousPublicId) {
+          await this.uploadsService.deleteFile(previousPublicId, 'auto');
+        } else {
+          await this.uploadsService.deleteFileByUrl(previousUrl);
+        }
+      } catch (err: unknown) {
+        this.logger.warn(`Failed to delete previous initial report: ${getErrorMessage(err)}`);
+      }
+    }
+
+    this.ordersService
+      ?.sendCertifiedReportEmail(projectId, {
+        isResend: wasAlreadyPublished && Boolean(previousUrl),
+        reportKind: 'initial',
+      })
+      .then((r) => {
+        if (r.sent) this.logger.log(`Initial scorecard emailed to ${r.to} for project ${projectId}`);
+        else if (r.skipped) this.logger.log(`Initial scorecard email skipped for project ${projectId}: ${r.reason}`);
+      })
+      .catch((err: unknown) => {
+        this.logger.warn(
+          `Initial scorecard email soft-failed after publish for ${projectId}: ${getErrorMessage(err)}`,
+        );
+      });
 
     return {
       projectId,
       status: ProjectStatus.PUBLISHED,
+      initialReportUrl: project.initialReportUrl,
+      initialReportFileName: project.initialReportFileName,
+      initialReportGeneratedAt: project.initialReportGeneratedAt,
       certifiedReportUrl: project.certifiedReportUrl,
       certifiedReportFileName: project.certifiedReportFileName,
       certifiedReportUploadedAt: project.certifiedReportUploadedAt,
       rollup,
-      message: 'Scorecard successfully finalized, calibrated, and published for client release.',
+      message:
+        'Scorecard published. Initial PDF generated and emailed to the customer. Upload the detailed report when ready (typically 15–30 days).',
     };
+  }
+
+  /** Super-admin download: combined Top + Lowest performing modules PDF (published only). */
+  async getTopLowPerformingPdf(projectId: string): Promise<{ buffer: Buffer; filename: string }> {
+    const project = await this.projectModel.findByPk(projectId);
+    if (!project) throw new NotFoundException(`Project ${projectId} not found`);
+    if (project.status !== ProjectStatus.PUBLISHED) {
+      throw new BadRequestException('Publish the scorecard before downloading Top & Lowest reports.');
+    }
+
+    const rollup = await this.getRollup(projectId);
+    if (!rollup?.categoryScores?.length) {
+      throw new BadRequestException('No category scores available for this project.');
+    }
+
+    const jurisdictionLabel = [project.city, project.county, project.state].filter(Boolean).join(', ');
+    const safeName = String(project.name || 'Scorecard')
+      .replace(/[^a-zA-Z0-9._-]+/g, '_')
+      .slice(0, 60);
+    const filename = `Top-Low-Performing-${safeName}.pdf`;
+
+    const buffer = await buildTopLowPerformingPdf({
+      projectName: project.name,
+      jurisdictionLabel: jurisdictionLabel || 'North Carolina',
+      year: project.year,
+      overallScoreTenScale: Number(rollup.overallScoreTenScale) || 0,
+      performanceBand: String(rollup.performanceBand || 'Average'),
+      categoryScores: (rollup.categoryScores || []).map((c: any) => ({
+        categoryKey: c.categoryKey,
+        categoryLabel: c.categoryLabel || c.categoryKey,
+        scoreTenScale: Number(c.scoreTenScale) || 0,
+        scorePercentage: Number(c.scorePercentage) || 0,
+        rank: c.rank,
+      })),
+    });
+
+    return { buffer, filename };
   }
 
   async replaceCertifiedReport(projectId: string, report: CertifiedReportPayload): Promise<any> {
     const project = await this.projectModel.findByPk(projectId);
     if (!project) throw new NotFoundException(`Project ${projectId} not found`);
 
+    if (project.status !== ProjectStatus.PUBLISHED) {
+      throw new BadRequestException('Publish the scorecard before uploading the detailed report.');
+    }
+
+    const hadDetailed = Boolean(String(project.certifiedReportUrl || '').trim());
     await this.applyCertifiedReport(project, report);
     await project.reload();
 
-    this.ordersService?.sendCertifiedReportEmail(projectId, { isResend: true }).then((r) => {
-      if (r.sent) this.logger.log(`Updated scorecard report emailed to ${r.to} for project ${projectId}`);
-      else if (r.skipped) this.logger.log(`Updated report email skipped for project ${projectId}: ${r.reason}`);
-    }).catch((err: unknown) => {
-      this.logger.warn(`Scorecard report email soft-failed after replace for ${projectId}: ${getErrorMessage(err)}`);
-    });
+    this.ordersService
+      ?.sendCertifiedReportEmail(projectId, {
+        isResend: hadDetailed,
+        reportKind: 'detailed',
+      })
+      .then((r) => {
+        if (r.sent) this.logger.log(`Detailed scorecard emailed to ${r.to} for project ${projectId}`);
+        else if (r.skipped) this.logger.log(`Detailed report email skipped for project ${projectId}: ${r.reason}`);
+      })
+      .catch((err: unknown) => {
+        this.logger.warn(
+          `Detailed scorecard email soft-failed after upload for ${projectId}: ${getErrorMessage(err)}`,
+        );
+      });
 
     return {
       projectId,
       status: project.status,
+      initialReportUrl: project.initialReportUrl,
+      initialReportFileName: project.initialReportFileName,
       certifiedReportUrl: project.certifiedReportUrl,
       certifiedReportPublicId: project.certifiedReportPublicId,
       certifiedReportFileName: project.certifiedReportFileName,
       certifiedReportUploadedAt: project.certifiedReportUploadedAt,
-      message: 'Certified project report updated.',
+      message: hadDetailed
+        ? 'Detailed scorecard report replaced and emailed to the customer.'
+        : 'Detailed scorecard report uploaded and emailed to the customer.',
     };
   }
 }

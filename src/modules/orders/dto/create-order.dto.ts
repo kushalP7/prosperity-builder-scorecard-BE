@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsIn, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsOptional, IsString, MinLength, IsIn } from 'class-validator';
 
 export class CreateOrderDto {
   @ApiProperty({ enum: ['scorecard_only', 'subscription', 'combined'] })
@@ -11,14 +11,15 @@ export class CreateOrderDto {
   @MinLength(2)
   customerName: string;
 
-  @ApiProperty({ required: false })
+  /** Project name entered at checkout (stored as order.organization; seeds project name on mark-paid). */
+  @ApiProperty({ required: false, description: 'Project name for the scorecard (optional)' })
   @IsOptional()
   @IsString()
   organization?: string;
 
-  /** card = existing Stripe/stub checkout; invoice = pending + PDF invoice email */
-  @ApiProperty({ enum: ['card', 'invoice'], required: false, default: 'card' })
+  /** Optional; checkout is always invoice / mail check. */
+  @ApiProperty({ enum: ['invoice'], required: false, default: 'invoice' })
   @IsOptional()
-  @IsIn(['card', 'invoice'])
-  checkoutMethod?: 'card' | 'invoice';
+  @IsIn(['invoice'])
+  checkoutMethod?: 'invoice';
 }

@@ -18,6 +18,7 @@ import { EmailService } from '../../integrations/email/email.service';
 import { PricingBrochureService } from './pricing-brochure.service';
 import { PasswordService } from '../auth/services/password.service';
 import { getErrorMessage, getErrorStack } from '../../common/errors';
+import { getFrontendBaseUrl } from '../../common/frontend-url';
 import {
   buildAdminInquiryNotificationTemplate,
   buildCustomerAcknowledgementTemplate,
@@ -132,7 +133,7 @@ export class InquiriesService {
     const email = inquiry.businessEmail.trim().toLowerCase();
     const existing = await this.userModel.findOne({ where: { email } });
     const { logoUrl, attachments, customerFrom, adminEmail } = this.mailExtras();
-    const frontendUrl = (this.configService.get<string>('FRONTEND_URL') || 'http://localhost:3000').replace(/\/+$/, '');
+    const frontendUrl = getFrontendBaseUrl(this.configService);
 
     const jurisdictionType = inquiry.leadRole === 'city' ? 'CITY' : inquiry.leadRole === 'county' ? 'COUNTY' : null;
 
@@ -265,7 +266,7 @@ export class InquiriesService {
     }
 
     const { logoUrl, attachments, customerFrom, adminEmail } = this.mailExtras();
-    const frontendUrl = (this.configService.get<string>('FRONTEND_URL') || 'http://localhost:3000').replace(/\/+$/, '');
+    const frontendUrl = getFrontendBaseUrl(this.configService);
     const loginUrl = `${frontendUrl}/login`;
 
     await this.emailService.sendEmail({

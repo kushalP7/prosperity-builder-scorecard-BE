@@ -1024,10 +1024,12 @@ export interface ScorecardReportEmailData {
   reportFileName: string;
   downloadUrl: string;
   isResend?: boolean;
+  /** initial = publish-time auto PDF; detailed = admin-uploaded certified report */
+  reportKind?: 'initial' | 'detailed';
 }
 
 /**
- * Builds the certified scorecard report delivery email (download link only).
+ * Builds the scorecard report delivery email (download link only).
  */
 export function buildScorecardReportDeliveredTemplate(
   data: ScorecardReportEmailData,
@@ -1035,10 +1037,24 @@ export function buildScorecardReportDeliveredTemplate(
 ): string {
   const firstName = escapeHtml((data.customerName || 'Customer').trim().split(/\s+/)[0]);
   const isResend = Boolean(data.isResend);
-  const headline = isResend ? 'Your scorecard report (updated)' : 'Your scorecard report is ready';
-  const intro = isResend
-    ? `We are sending an updated copy of the certified scorecard report for <strong style="color: #111827;">${escapeHtml(data.projectName)}</strong>.`
-    : `We are pleased to deliver your certified scorecard report for <strong style="color: #111827;">${escapeHtml(data.projectName)}</strong>. The assessment is complete and ready for download.`;
+  const kind = data.reportKind === 'initial' ? 'initial' : 'detailed';
+  const kindLabel = kind === 'initial' ? 'Initial Scorecard Report' : 'Detailed Scorecard Report';
+  const headline =
+    kind === 'initial'
+      ? isResend
+        ? 'Your initial scorecard (updated)'
+        : 'Your initial scorecard is ready'
+      : isResend
+        ? 'Your detailed scorecard report (updated)'
+        : 'Your detailed scorecard report is ready';
+  const intro =
+    kind === 'initial'
+      ? isResend
+        ? `We are sending an updated copy of the <strong>initial</strong> scorecard report for <strong style="color: #111827;">${escapeHtml(data.projectName)}</strong>.`
+        : `Your project has been published. We are pleased to deliver the <strong>initial</strong> scorecard report for <strong style="color: #111827;">${escapeHtml(data.projectName)}</strong>. A detailed certified report will follow in approximately 15–30 days.`
+      : isResend
+        ? `We are sending an updated copy of the <strong>detailed</strong> scorecard report for <strong style="color: #111827;">${escapeHtml(data.projectName)}</strong>.`
+        : `We are pleased to deliver your <strong>detailed</strong> scorecard report for <strong style="color: #111827;">${escapeHtml(data.projectName)}</strong>. The full assessment is ready for download.`;
 
   return `
 <!DOCTYPE html>
@@ -1136,7 +1152,7 @@ export function buildScorecardReportDeliveredTemplate(
                         </td>
                         <td valign="middle" style="padding-left: 10px;">
                           <div style="font-size: 13px; font-weight: 700; color: #0f172a;">${escapeHtml(data.reportFileName)}</div>
-                          <div style="font-size: 11px; color: #64748B; margin-top: 2px;">Certified Scorecard Assessment</div>
+                          <div style="font-size: 11px; color: #64748B; margin-top: 2px;">${kindLabel}</div>
                         </td>
                       </tr>
                     </table>
@@ -1207,12 +1223,17 @@ export function buildScorecardReportDeliveredTemplate(
 export function buildScorecardReportDeliveredText(data: ScorecardReportEmailData): string {
   const firstName = (data.customerName || 'Customer').trim().split(/\s+/)[0];
   const isResend = Boolean(data.isResend);
+  const kind = data.reportKind === 'initial' ? 'initial' : 'detailed';
   return [
     `Dear ${firstName},`,
     '',
-    isResend
-      ? `We are sending an updated copy of the certified scorecard report for ${data.projectName}.`
-      : `We are pleased to deliver your certified scorecard report for ${data.projectName}. The assessment is complete and ready for download.`,
+    kind === 'initial'
+      ? isResend
+        ? `We are sending an updated copy of the initial scorecard report for ${data.projectName}.`
+        : `Your project has been published. The initial scorecard report for ${data.projectName} is ready. A detailed certified report will follow in approximately 15–30 days.`
+      : isResend
+        ? `We are sending an updated copy of the detailed scorecard report for ${data.projectName}.`
+        : `We are pleased to deliver your detailed scorecard report for ${data.projectName}. The assessment is complete and ready for download.`,
     '',
     'Delivery details:',
     `  Order: ${data.orderNumber}`,

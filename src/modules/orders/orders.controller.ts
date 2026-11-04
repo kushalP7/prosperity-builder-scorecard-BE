@@ -14,7 +14,6 @@ import { Throttle } from '@nestjs/throttler';
 import type { Response } from 'express';
 import { OrdersService } from './orders.service';
 import { CreateOrderDto } from './dto/create-order.dto';
-import { StubPayDto } from './dto/stub-pay.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -41,7 +40,7 @@ export class OrdersController {
   @Public()
   @Get('payment-config')
   @ApiOperation({
-    summary: 'Active checkout provider (stripe | stub) from PAYMENT_PROVIDER + Stripe keys',
+    summary: 'Checkout mode (invoice / mail check only)',
   })
   async paymentConfig() {
     const data = this.ordersService.getPaymentConfig();
@@ -171,57 +170,19 @@ export class OrdersController {
   @Post()
   @Throttle({ default: { limit: 10, ttl: 60000 } })
   @ApiOperation({
-    summary: 'Start checkout: create or reuse pending order (JWT required; no entitlement until paid)',
+    summary:
+      'Start offline checkout: create/reuse pending invoice order and email PDF (no entitlement until mark-paid)',
   })
   async create(@Body() dto: CreateOrderDto, @CurrentUser() user: AuthUser) {
     if (!user?.id) throw new UnauthorizedException('Authentication required.');
     const data = await this.ordersService.createOrder(dto, user);
-    const invoicePending = dto.checkoutMethod === 'invoice' || data?.invoiceSent;
     return {
       success: true,
       data,
-      message: invoicePending
-        ? data?.message ||
-          'Invoice emailed. Order stays pending until a super admin marks it paid.'
-        : 'Checkout started. Complete payment to unlock your package.',
+      message:
+        data?.message ||
+        'Invoice emailed. Order stays pending until a super admin marks it paid.',
     };
-  }
-
-  @Post(':id/payment-intent')
-  @Throttle({ default: { limit: 10, ttl: 60000 } })
-  @ApiOperation({ summary: 'Create or reuse a Stripe PaymentIntent for this order' })
-  async createPaymentIntent(@Param('id') id: string, @CurrentUser() user: AuthUser) {
-    if (!user?.id) throw new UnauthorizedException('Authentication required.');
-    const data = await this.ordersService.createPaymentIntent(id, user);
-    return { success: true, data };
-  }
-
-  @Post(':id/confirm-payment')
-  @Throttle({ default: { limit: 10, ttl: 60000 } })
-  @ApiOperation({
-    summary:
-      'After Stripe.js confirm: verify PaymentIntent with Stripe and unlock entitlement (webhook backup)',
-  })
-  async confirmPayment(@Param('id') id: string, @CurrentUser() user: AuthUser) {
-    if (!user?.id) throw new UnauthorizedException('Authentication required.');
-    const data = await this.ordersService.confirmStripePayment(id, user);
-    return { success: true, data, message: data.message };
-  }
-
-  @Post(':id/pay')
-  @Throttle({ default: { limit: 10, ttl: 60000 } })
-  @ApiOperation({
-    summary:
-      'Stub card payment when PAYMENT_PROVIDER=stub (or ALLOW_STUB_PAY=true). Never in production. Owner-only.',
-  })
-  async pay(
-    @Param('id') id: string,
-    @Body() dto: StubPayDto,
-    @CurrentUser() user: AuthUser,
-  ) {
-    if (!user?.id) throw new UnauthorizedException('Authentication required.');
-    const data = await this.ordersService.stubPay(id, dto, user);
-    return { success: true, data, message: data.message };
   }
 
   @Post(':id/mark-paid')
@@ -230,7 +191,7 @@ export class OrdersController {
   @Throttle({ default: { limit: 20, ttl: 60000 } })
   @ApiOperation({
     summary:
-      'Mark Invoice / mail check order as paid (super_admin). Unlocks package like card checkout.',
+      'Mark Invoice / mail check order as paid (super_admin only). Unlocks package.',
   })
   async markPaid(@Param('id') id: string, @CurrentUser() user: AuthUser) {
     if (!user?.id) throw new UnauthorizedException('Authentication required.');
@@ -241,7 +202,7 @@ export class OrdersController {
   @Post(':id/refund')
   @UseGuards(RolesGuard)
   @Roles('super_admin')
-  @ApiOperation({ summary: 'Refund a fully paid order (stub / future Stripe)' })
+  @ApiOperation({ summary: 'Refund a fully paid order (super_admin)' })
   async refund(@Param('id') id: string) {
     const data = await this.ordersService.refund(id);
     return { success: true, data, message: 'Order refunded successfully.' };

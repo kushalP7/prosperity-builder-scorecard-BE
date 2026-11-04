@@ -14,12 +14,9 @@ import { InjectModel } from '@nestjs/sequelize';
 import { Op } from 'sequelize';
 import * as path from 'path';
 import * as fs from 'fs';
-// CommonJS-safe import (tsconfig has no esModuleInterop; default import breaks at runtime)
-import Stripe = require('stripe');
 import { Order, OrderStatus, PackageType } from './entities/order.entity';
 import { PaymentAttempt } from './entities/payment-attempt.entity';
 import { CreateOrderDto } from './dto/create-order.dto';
-import { StubPayDto } from './dto/stub-pay.dto';
 import { SettingsService } from '../settings/settings.service';
 import { ProjectsService } from '../projects/projects.service';
 import { UsersService } from '../users/users.service';
@@ -28,6 +25,7 @@ import { Project, ProjectStatus } from '../projects/entities/project.entity';
 import { projectSlotsForPackage } from '../../common/package-allowance';
 import { timelineStepFromProjectStatus } from '../../common/order-timeline';
 import { getErrorMessage } from '../../common/errors';
+import { getFrontendBaseUrl } from '../../common/frontend-url';
 import {
   buildInvoiceIssuedTemplate,
   buildInvoiceIssuedText,
@@ -67,8 +65,6 @@ const PACKAGE_META: Record<PackageType, { name: string; priceKey: 'reportPrice' 
 export class OrdersService implements OnModuleInit {
   private readonly logger = new Logger(OrdersService.name);
 
-  private stripe: Stripe | null = null;
-
   constructor(
     @InjectModel(Order) private readonly orderModel: typeof Order,
     @InjectModel(PaymentAttempt) private readonly attemptModel: typeof PaymentAttempt,
@@ -79,66 +75,16 @@ export class OrdersService implements OnModuleInit {
     private readonly usersService: UsersService,
     private readonly emailService: EmailService,
     private readonly configService: ConfigService,
-  ) {
-    const key = this.configService.get<string>('STRIPE_SECRET_KEY');
-    if (key) {
-      this.stripe = new Stripe(key);
-    }
-  }
+  ) {}
 
-  private getStripe(): Stripe {
-    if (!this.stripe) {
-      throw new BadRequestException('Stripe is not configured. Set STRIPE_SECRET_KEY in the server environment.');
-    }
-    return this.stripe;
-  }
-
-  private isProduction(): boolean {
-    return this.configService.get<string>('NODE_ENV') === 'production';
-  }
-
-  private requestedPaymentProvider(): 'stripe' | 'stub' {
-    const raw = String(this.configService.get<string>('PAYMENT_PROVIDER') || '')
-      .trim()
-      .toLowerCase();
-    if (raw === 'stripe' || raw === 'stub') return raw;
-    return this.isProduction() ? 'stripe' : 'stub';
-  }
-
-  private activePaymentProvider(): 'stripe' | 'stub' {
-    if (this.requestedPaymentProvider() === 'stripe' && this.stripe) return 'stripe';
-    return 'stub';
-  }
-
-  private isStripeMode(): boolean {
-    return this.activePaymentProvider() === 'stripe';
-  }
-
-  private stubPayAllowed(): boolean {
-    // Explicit stub mode always allows fake-card /pay (including NODE_ENV=production).
-    if (this.activePaymentProvider() === 'stub') return true;
-    // Stripe mode: allow admin stub only when opt-in (works in prod for staging/demo EC2).
-    return String(this.configService.get<string>('ALLOW_STUB_PAY') || '').toLowerCase() === 'true';
-  }
-
+  /** Checkout is invoice / mail-check only (no Stripe or stub card). */
   getPaymentConfig() {
-    const requested = this.requestedPaymentProvider();
-    const provider = this.activePaymentProvider();
-    const stripeConfigured = !!this.stripe;
-    let message: string | undefined;
-    if (requested === 'stripe' && !stripeConfigured) {
-      message = 'PAYMENT_PROVIDER=stripe but STRIPE_SECRET_KEY is missing — falling back to stub checkout.';
-    } else if (provider === 'stub') {
-      message = this.isProduction()
-        ? 'Stub/fake card checkout (PAYMENT_PROVIDER=stub). Switch to stripe + keys for live card payments.'
-        : 'Stub/fake card checkout (local). Set PAYMENT_PROVIDER=stripe with keys to use Stripe.';
-    }
     return {
-      provider,
-      requested,
-      stripeConfigured,
-      stubAllowed: this.stubPayAllowed(),
-      message,
+      provider: 'invoice' as const,
+      requested: 'invoice' as const,
+      stripeConfigured: false,
+      stubAllowed: false,
+      message: 'Offline Invoice / mail check only. Super admin marks orders paid after payment is received.',
     };
   }
 
@@ -191,8 +137,19 @@ export class OrdersService implements OnModuleInit {
 
   private async nextOrderNumber(): Promise<string> {
     const year = new Date().getFullYear();
-    const count = await this.orderModel.count();
-    return `ORD-${year}-${String(count + 1).padStart(3, '0')}`;
+    const prefix = `ORD-${year}-`;
+    // Use max existing suffix (not row count) so gaps/deletes don't collide on unique orderNumber.
+    const latest = await this.orderModel.findOne({
+      where: { orderNumber: { [Op.like]: `${prefix}%` } },
+      order: [['orderNumber', 'DESC']],
+      attributes: ['orderNumber'],
+    });
+    let next = 1;
+    if (latest?.orderNumber) {
+      const suffix = Number(String(latest.orderNumber).slice(prefix.length));
+      if (Number.isFinite(suffix) && suffix >= next) next = suffix + 1;
+    }
+    return `${prefix}${String(next).padStart(3, '0')}`;
   }
 
 
@@ -214,8 +171,7 @@ export class OrdersService implements OnModuleInit {
     }
     const organization = dto.organization?.trim() || null;
     const customerUserId = user.id;
-    const isInvoice = dto.checkoutMethod === 'invoice';
-    const provider = isInvoice ? 'invoice' : this.activePaymentProvider();
+    const provider = 'invoice';
 
     const existing = await this.orderModel.findOne({
       where: {
@@ -238,7 +194,7 @@ export class OrdersService implements OnModuleInit {
         organization,
         customerUserId,
         provider,
-        ...(isInvoice ? { stripePaymentIntentId: null } : {}),
+        stripePaymentIntentId: null,
       });
       order = existing;
     } else {
@@ -257,18 +213,14 @@ export class OrdersService implements OnModuleInit {
       } as any);
     }
 
-    if (isInvoice) {
-      await this.sendInvoiceEmail(order);
-      const formatted = this.formatOrder(order);
-      return {
-        ...formatted,
-        invoiceSent: true,
-        message:
-          'Invoice emailed. Order stays pending until a super admin marks it paid.',
-      };
-    }
-
-    return this.formatOrder(order);
+    await this.sendInvoiceEmail(order);
+    const formatted = this.formatOrder(order);
+    return {
+      ...formatted,
+      invoiceSent: true,
+      message:
+        'Invoice emailed. Order stays pending until Rose Associates records payment.',
+    };
   }
 
   async findOneForUser(id: string, user: AuthUser) {
@@ -279,207 +231,6 @@ export class OrdersService implements OnModuleInit {
     this.assertOwner(order, user);
     const [formatted] = await this.formatOrdersWithCustomerProjects([order]);
     return formatted;
-  }
-
-  async createPaymentIntent(orderId: string, user: AuthUser) {
-    if (!this.isStripeMode()) {
-      throw new BadRequestException(
-        'Stripe checkout is not active. Set PAYMENT_PROVIDER=stripe and STRIPE_SECRET_KEY, or use stub pay.',
-      );
-    }
-
-    const order = await this.orderModel.findByPk(orderId);
-    if (!order) throw new NotFoundException(`Order ${orderId} not found`);
-    this.assertOwner(order, user);
-
-    if (String(order.provider || '').toLowerCase() === 'invoice') {
-      throw new BadRequestException(
-        'This order is set to Invoice / mail check. A super admin must mark it paid after payment is received.',
-      );
-    }
-
-    if (order.status === 'paid') {
-      throw new BadRequestException('Order is already paid in full.');
-    }
-    if (order.status === 'refunded') {
-      throw new BadRequestException('Order was refunded and cannot be charged again.');
-    }
-    if (order.status !== 'pending' && order.status !== 'failed') {
-      throw new BadRequestException(`Order cannot be paid (status: ${order.status}).`);
-    }
-
-    const stripe = this.getStripe();
-    const amountCents = Math.round(Number(order.amountDue) * 100);
-    if (!Number.isFinite(amountCents) || amountCents < 50) {
-      throw new BadRequestException('Order amount is invalid for Stripe checkout.');
-    }
-
-    const reusableStatuses = new Set(['requires_payment_method', 'requires_confirmation', 'requires_action', 'processing']);
-
-    if (order.stripePaymentIntentId) {
-      try {
-        const existing = await stripe.paymentIntents.retrieve(order.stripePaymentIntentId);
-        if (existing.status === 'succeeded') {
-          throw new BadRequestException('Payment already completed. Refresh to see order status.');
-        }
-        if (reusableStatuses.has(existing.status)) {
-          if (existing.amount !== amountCents) {
-            await stripe.paymentIntents.update(existing.id, { amount: amountCents });
-          }
-          return {
-            clientSecret: existing.client_secret,
-            paymentIntentId: existing.id,
-            amount: Number(order.amountDue),
-            currency: 'usd',
-          };
-        }
-      } catch (err: unknown) {
-        if (err instanceof BadRequestException) throw err;
-        this.logger.warn(`Could not reuse PaymentIntent ${order.stripePaymentIntentId}: ${getErrorMessage(err)}`);
-      }
-    }
-
-    const pi = await stripe.paymentIntents.create({
-      amount: amountCents,
-      currency: 'usd',
-      metadata: {
-        orderId: order.id,
-        orderNumber: order.orderNumber,
-        userId: user.id,
-        packageType: order.packageType,
-      },
-      receipt_email: order.customerEmail,
-      automatic_payment_methods: { enabled: true },
-    });
-
-    await order.update({
-      stripePaymentIntentId: pi.id,
-      provider: 'stripe',
-      status: 'pending' as OrderStatus,
-    });
-
-    return {
-      clientSecret: pi.client_secret,
-      paymentIntentId: pi.id,
-      amount: Number(order.amountDue),
-      currency: 'usd',
-    };
-  }
-
-
-  async confirmStripePayment(orderId: string, user: AuthUser) {
-    if (!this.isStripeMode()) {
-      throw new BadRequestException(
-        'Stripe confirm is not active. Set PAYMENT_PROVIDER=stripe and STRIPE_SECRET_KEY.',
-      );
-    }
-
-    const order = await this.orderModel.findByPk(orderId);
-    if (!order) throw new NotFoundException(`Order ${orderId} not found`);
-    this.assertOwner(order, user);
-
-    if (order.status === 'paid') {
-      return this.finalizePaidOrder(order.id, {
-        provider: 'stripe',
-        method: 'Card (Stripe)',
-        reference: order.stripePaymentIntentId || `already-paid-${order.id}`,
-      });
-    }
-
-    if (!order.stripePaymentIntentId) {
-      throw new BadRequestException('No Stripe PaymentIntent on this order.');
-    }
-
-    const stripe = this.getStripe();
-    const pi = await stripe.paymentIntents.retrieve(order.stripePaymentIntentId, {
-      expand: ['latest_charge', 'payment_method'],
-    });
-
-    if (pi.status !== 'succeeded') {
-      throw new BadRequestException(
-        `Payment not completed yet (status: ${pi.status}). If you were charged, wait a moment and refresh.`,
-      );
-    }
-
-    const charge = typeof pi.latest_charge === 'string' ? null : (pi.latest_charge as Stripe.Charge | null);
-    const cardLast4 = charge?.payment_method_details?.card?.last4 || (pi.payment_method && typeof pi.payment_method !== 'string' ? (pi.payment_method as Stripe.PaymentMethod).card?.last4 : null) || null;
-
-    return this.finalizePaidOrder(order.id, {
-      provider: 'stripe',
-      method: 'Card (Stripe)',
-      reference: pi.id,
-      cardLast4,
-    });
-  }
-
-  async handleStripeWebhook(rawBody: Buffer, signature: string) {
-    const stripe = this.getStripe();
-    const secret = this.configService.get<string>('STRIPE_WEBHOOK_SECRET');
-    if (!secret) {
-      throw new BadRequestException('STRIPE_WEBHOOK_SECRET is not configured.');
-    }
-
-    let event: Stripe.Event;
-    try {
-      event = stripe.webhooks.constructEvent(rawBody, signature, secret);
-    } catch (err: unknown) {
-      this.logger.warn(`Stripe webhook signature failed: ${getErrorMessage(err)}`);
-      throw new UnauthorizedException('Invalid Stripe webhook signature.');
-    }
-
-    if (event.type === 'payment_intent.succeeded') {
-      const pi = event.data.object as Stripe.PaymentIntent;
-      const orderId = pi.metadata?.orderId;
-      let order: Order | null = null;
-      if (orderId) {
-        order = await this.orderModel.findByPk(orderId);
-      }
-      if (!order && pi.id) {
-        order = await this.orderModel.findOne({ where: { stripePaymentIntentId: pi.id } });
-      }
-      if (!order) {
-        this.logger.warn(`Stripe PI ${pi.id} succeeded but no matching order was found.`);
-        return { handled: false, reason: 'order_not_found' };
-      }
-
-      const charge = typeof pi.latest_charge === 'string' ? null : (pi.latest_charge as Stripe.Charge | null);
-      const cardLast4 = charge?.payment_method_details?.card?.last4 || (pi.payment_method && typeof pi.payment_method !== 'string' ? (pi.payment_method as Stripe.PaymentMethod).card?.last4 : null) || null;
-
-      await this.finalizePaidOrder(order.id, {
-        provider: 'stripe',
-        method: 'Card (Stripe)',
-        reference: pi.id,
-        cardLast4,
-      });
-      return { handled: true, orderId: order.id, event: event.type };
-    }
-
-    if (event.type === 'payment_intent.payment_failed') {
-      const pi = event.data.object as Stripe.PaymentIntent;
-      const orderId = pi.metadata?.orderId;
-      let order: Order | null = null;
-      if (orderId) order = await this.orderModel.findByPk(orderId);
-      if (!order && pi.id) {
-        order = await this.orderModel.findOne({ where: { stripePaymentIntentId: pi.id } });
-      }
-      if (!order) return { handled: false, reason: 'order_not_found' };
-      if (order.status === 'paid') return { handled: true, skipped: 'already_paid' };
-
-      await this.attemptModel.create({
-        orderId: order.id,
-        amount: order.amountDue,
-        status: 'failed',
-        provider: 'stripe',
-        method: 'Card (Stripe)',
-        cardLast4: null,
-        reference: pi.id,
-        failureReason: pi.last_payment_error?.message || 'Payment failed.',
-      } as any);
-      await order.update({ status: 'pending' as OrderStatus, amountPaid: 0 });
-      return { handled: true, orderId: order.id, event: event.type };
-    }
-
-    return { handled: false, event: event.type };
   }
 
   async getCustomerProjectAllowance(opts: { customerUserId?: string | null; customerEmail?: string | null; }) {
@@ -653,7 +404,26 @@ export class OrdersService implements OnModuleInit {
         deleted: { [Op.ne]: true },
         orderId: { [Op.in]: orderIds },
       },
-      attributes: [ 'id', 'name', 'status', 'year', 'county', 'state', 'customerUserId', 'clientEmail', 'clientName', 'orderId', 'certifiedReportUrl', 'certifiedReportFileName', 'createdAt', 'updatedAt', ],
+      attributes: [
+        'id',
+        'name',
+        'status',
+        'year',
+        'county',
+        'state',
+        'customerUserId',
+        'clientEmail',
+        'clientName',
+        'orderId',
+        'initialReportUrl',
+        'initialReportFileName',
+        'initialReportGeneratedAt',
+        'certifiedReportUrl',
+        'certifiedReportFileName',
+        'certifiedReportUploadedAt',
+        'createdAt',
+        'updatedAt',
+      ],
       order: [['createdAt', 'ASC']],
     });
 
@@ -683,8 +453,12 @@ export class OrdersService implements OnModuleInit {
           clientName: p.clientName,
           orderId: p.orderId || order.id,
           timelineStep,
+          initialReportUrl: p.initialReportUrl,
+          initialReportFileName: p.initialReportFileName,
+          initialReportGeneratedAt: p.initialReportGeneratedAt,
           certifiedReportUrl: p.certifiedReportUrl,
           certifiedReportFileName: p.certifiedReportFileName,
+          certifiedReportUploadedAt: p.certifiedReportUploadedAt,
           createdAt: p.createdAt,
           updatedAt: p.updatedAt,
           isPrimary: idx === 0,
@@ -829,7 +603,9 @@ export class OrdersService implements OnModuleInit {
       const slots = projectSlotsForPackage(order.packageType);
       const usedOnOrder = await this.projectsService.countForOrder(order.id);
       if (usedOnOrder === 0 && slots > 0) {
-        const seedName = order.organization?.trim() ? `${order.organization.trim()} Scorecard` : `${order.packageName} - ${order.customerName}`;
+        const seedName = order.organization?.trim()
+          ? order.organization.trim()
+          : `${order.packageName} - ${order.customerName}`;
         let seedJurisdiction: 'CITY' | 'COUNTY' = 'COUNTY';
         if (ownerUserId) {
           try {
@@ -846,7 +622,7 @@ export class OrdersService implements OnModuleInit {
 
         project = await this.projectsService.create({
           name: seedName,
-          clientName: order.organization || order.customerName,
+          clientName: order.customerName,
           year: new Date().getFullYear(),
           customerUserId: ownerUserId || undefined,
           clientEmail: order.customerEmail,
@@ -950,9 +726,6 @@ export class OrdersService implements OnModuleInit {
     const order = await this.orderModel.findByPk(orderId);
     if (!order) throw new NotFoundException(`Order ${orderId} not found`);
 
-    if (String(order.provider || '').toLowerCase() !== 'invoice') {
-      throw new BadRequestException('Only Invoice / mail check orders can be marked paid manually.');
-    }
     if (order.status === 'paid') {
       throw new BadRequestException('Order is already paid in full.');
     }
@@ -963,71 +736,11 @@ export class OrdersService implements OnModuleInit {
       throw new BadRequestException(`Order cannot be marked paid (status: ${order.status}).`);
     }
 
+    // Offline-only product: any unpaid order can be settled manually as invoice / mail check.
     return this.finalizePaidOrder(orderId, {
       provider: 'invoice',
       method: 'Invoice / mail check',
       reference: `MANUAL-${order.orderNumber}`,
-    });
-  }
-
-  async stubPay(orderId: string, dto: StubPayDto, user: AuthUser) {
-    if (!this.stubPayAllowed()) {
-      throw new ForbiddenException('Stub payments are disabled. Set PAYMENT_PROVIDER=stub for local fake-card checkout, or ALLOW_STUB_PAY=true for admin stub while using Stripe.');
-    }
-
-    const order = await this.orderModel.findByPk(orderId);
-    if (!order) throw new NotFoundException(`Order ${orderId} not found`);
-    if (String(order.provider || '').toLowerCase() === 'invoice') {
-      throw new BadRequestException(
-        'This order uses Invoice / mail check. Use Mark as paid (super admin) instead of card payment.',
-      );
-    }
-    this.assertOwner(order, user);
-
-    if (order.status === 'paid') {
-      throw new BadRequestException('Order is already paid in full.');
-    }
-    if (order.status === 'refunded') {
-      throw new BadRequestException('Order was refunded and cannot be charged again.');
-    }
-    if (order.status !== 'pending' && order.status !== 'failed') {
-      throw new BadRequestException(`Order cannot be paid (status: ${order.status}).`);
-    }
-
-    const digits = String(dto.cardNumber || '').replace(/\D/g, '');
-    if (digits.length < 13) {
-      throw new BadRequestException('Card number must be 13–19 digits.');
-    }
-    const last4 = digits.slice(-4);
-    const decline = dto.forceFail === true || digits.endsWith('0002');
-    const reference = `STUB-${Date.now().toString(36).toUpperCase()}-${last4}`;
-
-    if (decline) {
-      await this.attemptModel.create({
-        orderId: order.id,
-        amount: order.amountDue,
-        status: 'failed',
-        provider: 'stub',
-        method: 'Card (Stub)',
-        cardLast4: last4,
-        reference,
-        failureReason: 'Your card was declined. Please try another card.',
-      } as any);
-
-      await order.update({ status: 'pending' as OrderStatus, amountPaid: 0 });
-
-      throw new BadRequestException({
-        success: false,
-        message: 'Payment failed: card declined. Your order is still open - try another card to complete payment.',
-        data: await this.findOne(order.id),
-      });
-    }
-
-    return this.finalizePaidOrder(order.id, {
-      provider: 'stub',
-      method: 'Card (Stub)',
-      reference,
-      cardLast4: last4,
     });
   }
 
@@ -1045,8 +758,8 @@ export class OrdersService implements OnModuleInit {
       orderId: order.id,
       amount: order.amountPaid,
       status: 'refunded',
-      provider: order.provider || 'stub',
-      method: 'Full refund (Stub)',
+      provider: order.provider || 'invoice',
+      method: 'Full refund',
       reference,
     } as any);
 
@@ -1263,7 +976,7 @@ export class OrdersService implements OnModuleInit {
 
     const money = (n: number) => n.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
 
-    const frontendBase = (this.configService.get<string>('FRONTEND_URL') || 'http://localhost:5173').replace(/\/+$/, '');
+    const frontendBase = getFrontendBaseUrl(this.configService);
     const loginUrl = `${frontendBase}/login`;
 
     const orderDate = order.createdAt ? new Date(order.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', }) : null;
@@ -1301,7 +1014,15 @@ export class OrdersService implements OnModuleInit {
   }
 
  
-  async sendCertifiedReportEmail( projectId: string, opts: { isResend?: boolean; orderId?: string } = {}, ): Promise<{ sent: boolean; skipped?: boolean; reason?: string; to?: string }> {
+  async sendCertifiedReportEmail(
+    projectId: string,
+    opts: {
+      isResend?: boolean;
+      orderId?: string;
+      /** initial = publish PDF; detailed = admin-uploaded certified report (default) */
+      reportKind?: 'initial' | 'detailed';
+    } = {},
+  ): Promise<{ sent: boolean; skipped?: boolean; reason?: string; to?: string }> {
     const project = await this.projectModel.findByPk(projectId);
     if (!project || project.deleted) {
       throw new NotFoundException(`Project ${projectId} not found`);
@@ -1318,9 +1039,18 @@ export class OrdersService implements OnModuleInit {
       throw new BadRequestException('Project does not belong to this order.');
     }
 
-    const downloadUrl = String(project.certifiedReportUrl || '').trim();
+    const reportKind: 'initial' | 'detailed' =
+      opts.reportKind === 'initial' ? 'initial' : 'detailed';
+    const downloadUrl =
+      reportKind === 'initial'
+        ? String(project.initialReportUrl || '').trim()
+        : String(project.certifiedReportUrl || '').trim();
     if (!downloadUrl) {
-      throw new BadRequestException('Certified report PDF is required before sending the delivery email.');
+      throw new BadRequestException(
+        reportKind === 'initial'
+          ? 'Initial scorecard PDF is required before sending the delivery email.'
+          : 'Detailed report PDF is required before sending the delivery email.',
+      );
     }
 
     const order = await this.orderModel.findByPk(project.orderId);
@@ -1335,7 +1065,10 @@ export class OrdersService implements OnModuleInit {
     }
 
     const customerName = String(order.customerName || project.clientName || 'Customer').trim() || 'Customer';
-    const reportFileName = String(project.certifiedReportFileName || '').trim() || 'Certified-Scorecard-Report.pdf';
+    const reportFileName =
+      reportKind === 'initial'
+        ? String(project.initialReportFileName || '').trim() || 'Initial-Scorecard-Report.pdf'
+        : String(project.certifiedReportFileName || '').trim() || 'Detailed-Scorecard-Report.pdf';
     const isResend = Boolean(opts.isResend);
 
     const templateData = {
@@ -1345,10 +1078,18 @@ export class OrdersService implements OnModuleInit {
       reportFileName,
       downloadUrl,
       isResend,
+      reportKind,
     };
 
     const { logoUrl, attachments } = this.resolveEmailLogo();
-    const subject = isResend ? `Updated scorecard report - ${project.name} (${order.orderNumber})` : `Your scorecard report is ready - ${project.name} (${order.orderNumber})`;
+    const subject =
+      reportKind === 'initial'
+        ? isResend
+          ? `Updated initial scorecard - ${project.name} (${order.orderNumber})`
+          : `Your initial scorecard is ready - ${project.name} (${order.orderNumber})`
+        : isResend
+          ? `Updated detailed scorecard report - ${project.name} (${order.orderNumber})`
+          : `Your detailed scorecard report is ready - ${project.name} (${order.orderNumber})`;
 
     await this.emailService.sendEmail({
       to,
@@ -1362,9 +1103,17 @@ export class OrdersService implements OnModuleInit {
   }
 
   async sendProjectReportForOrder(orderId: string, projectId: string) {
+    const project = await this.projectModel.findByPk(projectId);
+    if (!project || project.deleted) {
+      throw new NotFoundException(`Project ${projectId} not found`);
+    }
+    const reportKind: 'initial' | 'detailed' = String(project.certifiedReportUrl || '').trim()
+      ? 'detailed'
+      : 'initial';
     const result = await this.sendCertifiedReportEmail(projectId, {
       isResend: true,
       orderId,
+      reportKind,
     });
     if (result.skipped) {
       throw new BadRequestException(
@@ -1387,9 +1136,7 @@ export class OrdersService implements OnModuleInit {
       day: 'numeric',
       year: 'numeric',
     });
-    const frontendBase = (
-      this.configService.get<string>('FRONTEND_URL') || 'http://localhost:5173'
-    ).replace(/\/+$/, '');
+    const frontendBase = getFrontendBaseUrl(this.configService);
     const loginUrl = `${frontendBase}/login`;
 
     const templateData = {
@@ -1453,9 +1200,7 @@ export class OrdersService implements OnModuleInit {
       currency: 'USD',
     });
 
-    const frontendBase = (
-      this.configService.get<string>('FRONTEND_URL') || 'http://localhost:5173'
-    ).replace(/\/+$/, '');
+    const frontendBase = getFrontendBaseUrl(this.configService);
     const loginUrl = `${frontendBase}/login`;
 
     const paidAt = order.paidAt

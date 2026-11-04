@@ -34,8 +34,7 @@ async function bootstrap() {
     logger.warn('AUTO_MIGRATE=false — skipping migrations on boot.');
   }
 
-  // rawBody: required for Stripe webhook signature verification
-  const app = await NestFactory.create(AppModule, { rawBody: true });
+  const app = await NestFactory.create(AppModule);
 
   // Enable HTTP Gzip compression for fast payloads
   app.use(compression());

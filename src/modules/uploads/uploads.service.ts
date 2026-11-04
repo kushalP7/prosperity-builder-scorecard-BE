@@ -86,6 +86,27 @@ export class UploadsService {
     return this.activeProvider.uploadFile(file, resolvedFolder, resourceType);
   }
 
+  /** Upload an in-memory buffer (e.g. generated PDF) as if it were a Multer file. */
+  async uploadBuffer(
+    buffer: Buffer,
+    originalName: string,
+    mimetype: string = 'application/pdf',
+    folder?: string,
+  ): Promise<StorageUploadResult> {
+    if (!buffer?.length) {
+      throw new BadRequestException('No file buffer provided');
+    }
+    const file = {
+      fieldname: 'file',
+      originalname: originalName,
+      encoding: '7bit',
+      mimetype,
+      size: buffer.length,
+      buffer,
+    } as Express.Multer.File;
+    return this.uploadFile(file, folder, 'raw');
+  }
+
   async deleteFileByUrl(url: string): Promise<{ success: boolean; result?: string }> {
     if (!url || typeof url !== 'string') {
       return { success: false, result: 'No URL provided' };
