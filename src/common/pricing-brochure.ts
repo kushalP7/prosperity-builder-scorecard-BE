@@ -15,5 +15,5 @@ export const SCORECARD_CATEGORY_NAMES = [
 ] as const;
 
 /** Pre-uploaded private brochure on S3; inquiries only mint a 7-day signed URL. */
-export const BROCHURE_S3_KEY_DEFAULT = 'Rose/private/subscription-pricing-brochure.pdf';
+export const BROCHURE_S3_KEY_DEFAULT = 'Rose/private/Prosperity-Builder-Subscription-Scorecard-Brochure.pdf';
 export const BROCHURE_SIGNED_URL_TTL_SECONDS = 60 * 60 * 24 * 7; // 7 days
