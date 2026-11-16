@@ -23,6 +23,7 @@ import { LandingPartner } from '../modules/landing-cms/entities/landing-partner.
 import { AnalyticsWidget } from '../modules/analytics/entities/analytics-widget.entity';
 import { User } from '../modules/users/entities/user.entity';
 import { Inquiry } from '../modules/inquiries/entities/inquiry.entity';
+import { postgresDialectOptions } from './sequelize';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { Inquiry } from '../modules/inquiries/entities/inquiry.entity';
         username: configService.get<string>('DB_USERNAME'),
         password: configService.get<string>('DB_PASSWORD'),
         database: configService.get<string>('DB_DATABASE'),
+        dialectOptions: postgresDialectOptions(true),
         models: [
           User,
           AppSettings,

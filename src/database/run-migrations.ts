@@ -1,7 +1,7 @@
 import * as path from 'path';
 import { Sequelize } from 'sequelize';
 import { Umzug, SequelizeStorage } from 'umzug';
-import { closeMigrationSequelize } from './sequelize';
+import { closeMigrationSequelize, postgresDialectOptions } from './sequelize';
 
 export type RunMigrationsResult = {
   applied: string[];
@@ -55,6 +55,7 @@ export function createMigratorSequelize(): Sequelize {
     username: process.env.DB_USERNAME,
     password: process.env.DB_PASSWORD,
     database: process.env.DB_DATABASE,
+    dialectOptions: postgresDialectOptions(),
     logging: false,
   });
 }
