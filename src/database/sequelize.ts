@@ -1,19 +1,18 @@
 import { Sequelize } from 'sequelize';
 
 /**
- * Neon (and other hosted Postgres) rejects non-SSL clients with
- * "connection is insecure (try using `sslmode=require`)".
- * DB_SSL=true enables it. DB_SSL=false disables it.
- * When unset, callers choose the default (app on, migrations off unless the host is Neon).
+ * SSL is off unless the host is Neon or DB_SSL=true.
+ * Local Postgres and the EC2 tunnel do not accept SSL.
+ * Neon rejects plain connections with "connection is insecure (try using `sslmode=require`)".
  */
-export function postgresDialectOptions(defaultOn = false): {
+export function postgresDialectOptions(host = process.env.DB_HOST): {
   ssl?: { require: true; rejectUnauthorized: true };
 } {
   const flag = String(process.env.DB_SSL ?? '').trim().toLowerCase();
   if (flag === 'false' || flag === '0' || flag === 'disable') return {};
   const explicitlyOn = flag === 'true' || flag === '1' || flag === 'require';
-  const neonHost = (process.env.DB_HOST ?? '').includes('neon.tech');
-  if (!explicitlyOn && !neonHost && !defaultOn) return {};
+  const neonHost = (host ?? '').includes('neon.tech');
+  if (!explicitlyOn && !neonHost) return {};
   return {
     ssl: {
       require: true,

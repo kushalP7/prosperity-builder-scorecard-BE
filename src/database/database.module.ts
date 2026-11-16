@@ -37,7 +37,7 @@ import { postgresDialectOptions } from './sequelize';
         username: configService.get<string>('DB_USERNAME'),
         password: configService.get<string>('DB_PASSWORD'),
         database: configService.get<string>('DB_DATABASE'),
-        dialectOptions: postgresDialectOptions(true),
+        dialectOptions: postgresDialectOptions(configService.get<string>('DB_HOST')),
         models: [
           User,
           AppSettings,
