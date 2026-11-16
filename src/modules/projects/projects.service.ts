@@ -60,7 +60,8 @@ export class ProjectsService {
     }
 
     json.data = dataMap;
-    json.assignedSections = json.assignedSections || [];
+    const rawAssigned = Array.isArray(json.assignedSections) ? json.assignedSections : [];
+    json.assignedSections = rawAssigned.filter((s: any) => s != null && typeof s === 'object');
     json.enabledWidgets = json.enabledWidgets || [];
     json.rollup = project.rollup ? (typeof (project.rollup as any).toJSON === 'function' ? (project.rollup as any).toJSON() : project.rollup) : null;
     return json;
@@ -71,11 +72,13 @@ export class ProjectsService {
     delete json.records;
 
     const rawSections = Array.isArray(json.assignedSections) ? json.assignedSections : [];
-    json.assignedSections = rawSections.map((s: any) => ({
-      id: s.id,
-      label: s.label || s.name || '',
-      name: s.label || s.name || '',
-    }));
+    json.assignedSections = rawSections
+      .filter((s: any) => s != null && typeof s === 'object')
+      .map((s: any) => ({
+        id: s.id,
+        label: s.label || s.name || '',
+        name: s.label || s.name || '',
+      }));
 
     json.data = {};
     json.enabledWidgets = json.enabledWidgets || [];

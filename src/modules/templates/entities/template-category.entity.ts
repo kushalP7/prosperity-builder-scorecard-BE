@@ -20,6 +20,10 @@ export class TemplateCategory extends Model {
   @Column({ type: DataType.TEXT, allowNull: true })
   description: string;
 
+  /** Staff-only scoring rule text (never shown on client scorecard). */
+  @Column({ type: DataType.TEXT, allowNull: true })
+  scoringNotes: string;
+
   @HasMany(() => TemplateGroup, { onDelete: 'CASCADE' })
   groups: TemplateGroup[];
 }

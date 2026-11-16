@@ -10,4 +10,12 @@ export class CreateCategoryDto {
   @IsOptional()
   @IsString()
   description?: string;
+
+  @ApiProperty({
+    required: false,
+    description: 'Staff-only scoring rule text. Not shown to clients.',
+  })
+  @IsOptional()
+  @IsString()
+  scoringNotes?: string;
 }

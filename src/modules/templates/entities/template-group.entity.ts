@@ -19,6 +19,10 @@ export class TemplateGroup extends Model {
   @Column({ type: DataType.TEXT, allowNull: true })
   description: string;
 
+  /** Staff-only scoring rule text (never shown on client scorecard). */
+  @Column({ type: DataType.TEXT, allowNull: true })
+  scoringNotes: string;
+
   @Column({ type: DataType.FLOAT, defaultValue: 2.0, allowNull: true })
   weight: number;
 

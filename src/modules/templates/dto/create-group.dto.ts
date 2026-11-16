@@ -11,6 +11,14 @@ export class CreateGroupDto {
   @IsString()
   description?: string;
 
+  @ApiProperty({
+    required: false,
+    description: 'Staff-only scoring rule text (e.g. If Data 0-1 = 0…). Not shown to clients.',
+  })
+  @IsOptional()
+  @IsString()
+  scoringNotes?: string;
+
   @ApiProperty({ default: 2, required: false })
   @IsOptional()
   weight?: number;
