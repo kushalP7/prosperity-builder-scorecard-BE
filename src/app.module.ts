@@ -20,8 +20,10 @@ import { UsersModule } from './modules/users/users.module';
 import { InquiriesModule } from './modules/inquiries/inquiries.module';
 import { EmailModule } from './integrations/email/email.module';
 import { RequestLoggingMiddleware } from './common/middleware/request-logging.middleware';
+import { HealthController } from './health.controller';
 
 @Module({
+  controllers: [HealthController],
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,

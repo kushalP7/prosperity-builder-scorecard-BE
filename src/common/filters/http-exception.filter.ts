@@ -9,6 +9,10 @@ import {
 import { Request, Response } from 'express';
 import { getErrorMessage } from '../errors';
 
+/** Paths bots probe constantly — keep out of PM2 error.log */
+const NOISE_PATH =
+  /^\/($|robots\.txt|favicon\.ico|ads\.txt|sitemap\.xml|\.env|\.git|wp-|wordpress|phpmyadmin|admin|login|cgi-bin|actuator|hudson|\.well-known|info\.php|config\.php|device\.rsp|mcp|sse|aaa\d|aab\d)/i;
+
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
   private readonly logger = new Logger(HttpExceptionFilter.name);
@@ -18,9 +22,35 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const response = ctx.getResponse<Response>();
     const request = ctx.getRequest<Request>();
 
-    const status = exception instanceof HttpException ? exception.getStatus() : HttpStatus.INTERNAL_SERVER_ERROR;
-    const message = exception instanceof HttpException ? exception.getResponse() : getErrorMessage(exception, 'Internal server error');
-    this.logger.error( `HTTP Status ${status} Error: ${JSON.stringify(message)} Path: ${request.url}`, exception instanceof Error ? exception.stack : undefined );
+    const status =
+      exception instanceof HttpException
+        ? exception.getStatus()
+        : HttpStatus.INTERNAL_SERVER_ERROR;
+    const message =
+      exception instanceof HttpException
+        ? exception.getResponse()
+        : getErrorMessage(exception, 'Internal server error');
+
+    const path = request.originalUrl || request.url || '';
+    const summary = `HTTP ${status}: ${typeof message === 'string' ? message : JSON.stringify(message)} Path: ${path}`;
+
+    // Expected client/auth noise — warn only, no stack dump into PM2 error.log
+    if (status === HttpStatus.UNAUTHORIZED || status === HttpStatus.FORBIDDEN) {
+      this.logger.warn(summary);
+    } else if (status === HttpStatus.NOT_FOUND) {
+      if (NOISE_PATH.test(path.split('?')[0])) {
+        this.logger.debug(summary);
+      } else {
+        this.logger.warn(summary);
+      }
+    } else if (status >= 500) {
+      this.logger.error(
+        summary,
+        exception instanceof Error ? exception.stack : undefined,
+      );
+    } else {
+      this.logger.warn(summary);
+    }
 
     response.status(status).json({
       success: false,
