@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/sequelize';
 import { Sequelize } from 'sequelize-typescript';
 import { Op } from 'sequelize';
@@ -428,6 +428,29 @@ export class ProjectsService {
     return this.findOne(id);
   }
 
+  private assignedSectionConflictKey(section: any): string | null {
+    if (!section || typeof section !== 'object') return null;
+    if (section.versionGroupId) return `vg:${section.versionGroupId}`;
+    if (section.id) return `id:${section.id}`;
+    if (section.label) return `label:${String(section.label).trim().toLowerCase()}`;
+    return null;
+  }
+
+  private isAssignedSectionMatch(existing: any, incoming: any): boolean {
+    if (!existing || !incoming) return false;
+    if (existing.id && incoming.id && existing.id === incoming.id) return true;
+    if (
+      existing.versionGroupId &&
+      incoming.versionGroupId &&
+      existing.versionGroupId === incoming.versionGroupId
+    ) {
+      return true;
+    }
+    const existingLabel = existing.label ? String(existing.label).trim().toLowerCase() : '';
+    const incomingLabel = incoming.label ? String(incoming.label).trim().toLowerCase() : '';
+    return Boolean(existingLabel && incomingLabel && existingLabel === incomingLabel);
+  }
+
   async assignSections(projectId: string, sectionIds: string[]): Promise<any> {
     const projectModel = await this.projectModel.findByPk(projectId);
     if (!projectModel) throw new NotFoundException(`Project ${projectId} not found`);
@@ -462,25 +485,60 @@ export class ProjectsService {
       throw new NotFoundException(`No template sections found for the provided IDs`);
     }
 
-    let assignedSections: any[] = [...(projectModel.assignedSections || [])];
+    const archived = sectionTemplates.filter(
+      (s) => s.status === 'archived' || s.isLatest === false,
+    );
+    if (archived.length > 0) {
+      throw new BadRequestException(
+        `Only latest active template sections can be assigned. Blocked: ${archived
+          .map((s) => `${s.label} (v${s.version})`)
+          .join(', ')}`,
+      );
+    }
+
+    const assignedSections: any[] = [...(projectModel.assignedSections || [])].filter(
+      (s) => s != null && typeof s === 'object',
+    );
+
+    const conflicts: string[] = [];
+    const toAppend: any[] = [];
 
     for (const sectionTemplate of sectionTemplates) {
       const clonedSection = JSON.parse(JSON.stringify(sectionTemplate.toJSON()));
-      const existingIndex = assignedSections.findIndex(
-        (s: any) =>
-          s.id === clonedSection.id ||
-          (clonedSection.versionGroupId && s.versionGroupId === clonedSection.versionGroupId) ||
-          (s.label && clonedSection.label && s.label.trim().toLowerCase() === clonedSection.label.trim().toLowerCase()),
+      const alreadyAssigned = assignedSections.some((s: any) =>
+        this.isAssignedSectionMatch(s, clonedSection),
       );
 
-      if (existingIndex >= 0) {
-        assignedSections[existingIndex] = clonedSection;
-      } else {
-        assignedSections.push(clonedSection);
+      if (alreadyAssigned) {
+        conflicts.push(
+          `${clonedSection.label || clonedSection.id} (project keeps its pinned version)`,
+        );
+        continue;
       }
+
+      // Also block duplicates within the same request batch
+      const batchKey = this.assignedSectionConflictKey(clonedSection);
+      const duplicateInBatch = toAppend.some(
+        (s) =>
+          this.isAssignedSectionMatch(s, clonedSection) ||
+          (batchKey && this.assignedSectionConflictKey(s) === batchKey),
+      );
+      if (duplicateInBatch) continue;
+
+      toAppend.push(clonedSection);
     }
 
-    await projectModel.update({ assignedSections });
+    if (conflicts.length > 0 && toAppend.length === 0) {
+      throw new ConflictException(
+        `Section(s) already assigned to this project; upgrades are blocked. ${conflicts.join('; ')}`,
+      );
+    }
+
+    if (toAppend.length === 0) {
+      return this.findOne(projectId);
+    }
+
+    await projectModel.update({ assignedSections: [...assignedSections, ...toAppend] });
 
     await this.scorecardCalcService.calculateAllRowsForProject(projectId).catch((err: unknown) => {
       console.error('Error calculating scorecard after assigning sections:', getErrorMessage(err));

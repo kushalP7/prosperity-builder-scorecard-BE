@@ -31,6 +31,9 @@ export class TemplateSection extends Model {
   @Column({ type: DataType.JSONB, allowNull: true })
   snapshot: any;
 
+  @Column({ type: DataType.JSONB, allowNull: true })
+  diffSummary: any;
+
   @HasMany(() => TemplateCategory, { onDelete: 'CASCADE' })
   categories: TemplateCategory[];
 

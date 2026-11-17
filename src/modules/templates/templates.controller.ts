@@ -31,6 +31,21 @@ export class TemplatesController {
     return { success: true, data: versions };
   }
 
+  @Get('sections/:id/versions/compare')
+  @ApiOperation({ summary: 'Compare two versions of a section (previous vs current)' })
+  async compareSectionVersions(
+    @Param('id') id: string,
+    @Query('fromVersion') fromVersion?: string,
+    @Query('toVersion') toVersion?: string,
+  ) {
+    const comparison = await this.templatesService.compareSectionVersions(
+      id,
+      fromVersion != null && fromVersion !== '' ? Number(fromVersion) : undefined,
+      toVersion != null && toVersion !== '' ? Number(toVersion) : undefined,
+    );
+    return { success: true, data: comparison };
+  }
+
   @Post('sections/:id/publish-version')
   @ApiOperation({ summary: 'Publish new version of a section' })
   async createSectionVersion(@Param('id') id: string, @Body() dto: { changelog?: string }) {

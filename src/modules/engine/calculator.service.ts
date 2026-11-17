@@ -312,6 +312,7 @@ export class CalculatorService {
       jurisdictionLabel: jurisdictionLabel || 'North Carolina',
       year: project.year,
       overallScoreTenScale: Number(rollup.overallScoreTenScale) || 0,
+      overallScorePercentage: Number(rollup.overallScorePercentage) || 0,
       performanceBand: String(rollup.performanceBand || 'Average'),
       categoryScores: (rollup.categoryScores || []).map((c: any) => ({
         categoryKey: c.categoryKey,

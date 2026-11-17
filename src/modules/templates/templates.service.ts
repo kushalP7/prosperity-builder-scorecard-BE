@@ -1,10 +1,15 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/sequelize';
 import { Sequelize } from 'sequelize-typescript';
 import { TemplateSection } from './entities/template-section.entity';
 import { TemplateCategory } from './entities/template-category.entity';
 import { TemplateGroup } from './entities/template-group.entity';
 import { TemplateColumn, ColumnType } from './entities/template-column.entity';
+import {
+  diffSectionTrees,
+  sectionTreeFromRecord,
+  SectionDiffSummary,
+} from './section-version-diff';
 
 @Injectable()
 export class TemplatesService {
@@ -73,6 +78,50 @@ export class TemplatesService {
     });
     if (!section) throw new NotFoundException(`Section ${id} not found`);
     return section;
+  }
+
+  private buildTreeSnapshot(section: TemplateSection): {
+    categories: any[];
+    columns: any[];
+  } {
+    return {
+      categories: (section.categories || []).map((cat) => ({
+        ...cat.toJSON(),
+        groups: ((cat as any).groups || []).map((grp: any) => grp.toJSON()),
+      })),
+      columns: (section.columns || []).map((col) => col.toJSON()),
+    };
+  }
+
+  /**
+   * Freeze the current tree into snapshot once, before the first edit of a version.
+   * Snapshot is immutable afterward so Publish can diff previous vs current correctly.
+   */
+  async ensureSnapshotFrozen(sectionId: string): Promise<void> {
+    const section = await this.findSectionById(sectionId);
+    const hasFrozen = Boolean(section.snapshot?.categories || section.snapshot?.columns);
+    if (hasFrozen) return;
+    await section.update({
+      snapshot: this.buildTreeSnapshot(section),
+    });
+  }
+
+  private async resolveSectionIdFromCategory(categoryId: string): Promise<string> {
+    const category = await this.categoryModel.findByPk(categoryId);
+    if (!category) throw new NotFoundException(`Category ${categoryId} not found`);
+    return category.sectionId;
+  }
+
+  private async resolveSectionIdFromGroup(groupId: string): Promise<string> {
+    const group = await this.groupModel.findByPk(groupId);
+    if (!group) throw new NotFoundException(`Group ${groupId} not found`);
+    return this.resolveSectionIdFromCategory(group.categoryId);
+  }
+
+  private async resolveSectionIdFromColumn(columnId: string): Promise<string> {
+    const column = await this.columnModel.findByPk(columnId);
+    if (!column) throw new NotFoundException(`Column ${columnId} not found`);
+    return column.sectionId;
   }
 
   async createDefaultColumnsForSection(sectionId: string, transaction?: any): Promise<TemplateColumn[]> {
@@ -185,6 +234,8 @@ export class TemplatesService {
       await section.update({ versionGroupId: section.id });
     }
     await this.createDefaultColumnsForSection(section.id);
+    const created = await this.findSectionById(section.id);
+    await created.update({ snapshot: this.buildTreeSnapshot(created) });
     return this.findSectionById(section.id);
   }
 
@@ -219,13 +270,33 @@ export class TemplatesService {
       1;
     const newVersion = currentMaxVersion + 1;
 
-    const newSnapshot = {
-      categories: (sourceSection.categories || []).map((cat) => ({
-        ...cat.toJSON(),
-        groups: ((cat as any).groups || []).map((grp: any) => grp.toJSON()),
-      })),
-      columns: (sourceSection.columns || []).map((col) => col.toJSON()),
+    const newSnapshot = this.buildTreeSnapshot(sourceSection);
+
+    // Diff live tree against the immutable snapshot frozen before edits.
+    // Never overwrite that snapshot with the live tree on publish — that made
+    // History show v1 with the same column count as v2 and an empty diff.
+    const sourceJson = sourceSection.toJSON() as any;
+    const hasFrozenSnapshot = Boolean(
+      sourceJson.snapshot?.categories || sourceJson.snapshot?.columns,
+    );
+    const fromTree = hasFrozenSnapshot
+      ? sectionTreeFromRecord(sourceJson)
+      : {
+          label: sourceSection.label,
+          description: sourceSection.description,
+          categories: [],
+          columns: [],
+        };
+    const nextTree = {
+      label: sourceSection.label,
+      description: sourceSection.description,
+      categories: newSnapshot.categories,
+      columns: newSnapshot.columns,
     };
+    const diffSummary = diffSectionTrees(fromTree, nextTree, {
+      fromVersion: currentMaxVersion,
+      toVersion: newVersion,
+    });
 
     const transaction = await this.sequelize.transaction();
     try {
@@ -233,10 +304,6 @@ export class TemplatesService {
         { isLatest: false, status: 'archived' },
         { where: { versionGroupId }, transaction },
       );
-
-      if (!sourceSection.snapshot) {
-        await sourceSection.update({ snapshot: newSnapshot }, { transaction });
-      }
 
       const newSection = await this.sectionModel.create(
         {
@@ -248,6 +315,7 @@ export class TemplatesService {
           versionGroupId,
           changelog: dto?.changelog || `Version ${newVersion} created`,
           snapshot: newSnapshot,
+          diffSummary,
         },
         { transaction },
       );
@@ -297,23 +365,85 @@ export class TemplatesService {
   }
 
   async updateSection(id: string, dto: any): Promise<TemplateSection> {
+    await this.ensureSnapshotFrozen(id);
     const section = await this.sectionModel.findByPk(id);
     if (!section) throw new NotFoundException(`Section ${id} not found`);
     await section.update(dto);
     return section;
   }
 
+  async compareSectionVersions(
+    sectionId: string,
+    fromVersion?: number,
+    toVersion?: number,
+  ): Promise<{
+    fromVersion: number;
+    toVersion: number;
+    changelog?: string;
+    diff: SectionDiffSummary;
+    storedDiffSummary?: SectionDiffSummary | null;
+  }> {
+    const section = await this.findSectionById(sectionId);
+    const versionGroupId = section.versionGroupId || section.id;
+    const versions = await this.sectionModel.findAll({
+      where: { versionGroupId },
+      order: [['version', 'ASC']],
+    });
+
+    if (!versions.length) {
+      throw new NotFoundException(`No versions found for section ${sectionId}`);
+    }
+
+    const resolvedTo =
+      toVersion != null
+        ? versions.find((v) => v.version === Number(toVersion))
+        : versions[versions.length - 1];
+    if (!resolvedTo) {
+      throw new BadRequestException(`Version ${toVersion} not found in this section group`);
+    }
+
+    const resolvedFrom =
+      fromVersion != null
+        ? versions.find((v) => v.version === Number(fromVersion))
+        : versions.filter((v) => v.version < resolvedTo.version).pop() || versions[0];
+
+    if (!resolvedFrom) {
+      throw new BadRequestException(`Version ${fromVersion} not found in this section group`);
+    }
+
+    if (resolvedFrom.version === resolvedTo.version && versions.length > 1) {
+      throw new BadRequestException('fromVersion and toVersion must be different');
+    }
+
+    const fromTree = sectionTreeFromRecord(resolvedFrom.toJSON());
+    const toTree = sectionTreeFromRecord(resolvedTo.toJSON());
+    const diff = diffSectionTrees(fromTree, toTree, {
+      fromVersion: resolvedFrom.version,
+      toVersion: resolvedTo.version,
+    });
+
+    return {
+      fromVersion: resolvedFrom.version,
+      toVersion: resolvedTo.version,
+      changelog: resolvedTo.changelog,
+      diff,
+      storedDiffSummary: (resolvedTo.diffSummary as SectionDiffSummary) || null,
+    };
+  }
+
   async createCategory(sectionId: string, dto: any): Promise<TemplateCategory> {
     const section = await this.sectionModel.findByPk(sectionId);
     if (!section) throw new NotFoundException(`Section ${sectionId} not found`);
-    // Ensure default columns exist on the section
+    // Ensure default columns exist before freezing snapshot
     await this.createDefaultColumnsForSection(sectionId);
+    await this.ensureSnapshotFrozen(sectionId);
     return this.categoryModel.create({ ...dto, sectionId });
   }
 
   async updateCategory(id: string, dto: any): Promise<TemplateCategory> {
     const category = await this.categoryModel.findByPk(id);
     if (!category) throw new NotFoundException(`Category ${id} not found`);
+    await this.ensureSnapshotFrozen(category.sectionId);
     await category.update(dto);
     return category;
   }
@@ -321,10 +451,13 @@ export class TemplatesService {
   async createGroup(categoryId: string, dto: any): Promise<TemplateGroup> {
     const category = await this.categoryModel.findByPk(categoryId);
     if (!category) throw new NotFoundException(`Category ${categoryId} not found`);
+    await this.ensureSnapshotFrozen(category.sectionId);
     return this.groupModel.create({ ...dto, categoryId });
   }
 
   async updateGroup(id: string, dto: any): Promise<TemplateGroup> {
+    const sectionId = await this.resolveSectionIdFromGroup(id);
+    await this.ensureSnapshotFrozen(sectionId);
     const group = await this.groupModel.findByPk(id);
     if (!group) throw new NotFoundException(`Group ${id} not found`);
     await group.update(dto);
@@ -344,6 +477,8 @@ export class TemplatesService {
       sectionId = cat.sectionId;
     }
 
+    await this.ensureSnapshotFrozen(sectionId);
+
     const column = await this.columnModel.create({
       ...colData,
       sectionId,
@@ -353,6 +488,8 @@ export class TemplatesService {
   }
 
   async updateColumn(id: string, dto: any): Promise<TemplateColumn> {
+    const sectionId = await this.resolveSectionIdFromColumn(id);
+    await this.ensureSnapshotFrozen(sectionId);
     const column = await this.columnModel.findByPk(id);
     if (!column) throw new NotFoundException(`Column ${id} not found`);
 
@@ -397,15 +534,22 @@ export class TemplatesService {
 
   async deleteCategory(id: string): Promise<void> {
     const category = await this.categoryModel.findByPk(id);
-    if (category) await category.destroy();
+    if (category) {
+      await this.ensureSnapshotFrozen(category.sectionId);
+      await category.destroy();
+    }
   }
 
   async deleteGroup(id: string): Promise<void> {
+    const sectionId = await this.resolveSectionIdFromGroup(id);
+    await this.ensureSnapshotFrozen(sectionId);
     const group = await this.groupModel.findByPk(id);
     if (group) await group.destroy();
   }
 
   async deleteColumn(id: string): Promise<void> {
+    const sectionId = await this.resolveSectionIdFromColumn(id);
+    await this.ensureSnapshotFrozen(sectionId);
     const column = await this.columnModel.findByPk(id);
     if (column) await column.destroy();
   }
