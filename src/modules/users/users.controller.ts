@@ -1,8 +1,9 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Query, UseGuards, HttpCode, HttpStatus } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { AuthService } from '../auth/auth.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -12,7 +13,10 @@ import { Roles } from '../auth/decorators/roles.decorator';
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('api/v1/users')
 export class UsersController {
-  constructor(private readonly usersService: UsersService) {}
+  constructor(
+    private readonly usersService: UsersService,
+    private readonly authService: AuthService,
+  ) {}
 
   @Get()
   @Roles('super_admin', 'project_lead')
@@ -56,6 +60,14 @@ export class UsersController {
   async update(@Param('id') id: string, @Body() dto: UpdateUserDto) {
     const data = await this.usersService.update(id, dto);
     return { success: true, data, message: 'User updated successfully' };
+  }
+
+  @Post(':id/send-set-password')
+  @Roles('super_admin')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Email set-password / reset link (pending or active; Super Admin only)' })
+  async sendSetPassword(@Param('id') id: string) {
+    return this.authService.adminSendSetPasswordEmail(id);
   }
 
   @Delete(':id')

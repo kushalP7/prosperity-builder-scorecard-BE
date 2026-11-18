@@ -26,7 +26,7 @@ export class AuthController {
   @Public()
   @Post('set-password')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Complete portal invite: set password from email token' })
+  @ApiOperation({ summary: 'Set password from invite or admin-sent set-password email token' })
   async setPassword(@Body() dto: SetPasswordDto) {
     return this.authService.setPasswordFromInvite(dto);
   }

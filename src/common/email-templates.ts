@@ -1301,6 +1301,51 @@ export function buildPortalInviteTemplate(
 }
 
 /**
+ * Self-serve password reset — time-limited link (same set-password page).
+ */
+export function buildPasswordResetTemplate(
+  data: { firstName: string; resetUrl: string },
+  logoUrl: string = 'cid:roselogo',
+): string {
+  const firstName = escapeHtml((data.firstName || 'there').trim());
+  const url = escapeHtml(data.resetUrl);
+
+  return `
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Reset password - Rose Associates</title></head>
+<body style="margin:0;padding:0;background:#f4f5f7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#111827;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f5f7;padding:36px 16px;">
+    <tr><td align="center">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:580px;background:#ffffff;border-radius:8px;border:1px solid #e5e7eb;overflow:hidden;">
+        <tr><td style="padding:22px 32px 18px;">
+          <img src="${logoUrl}" alt="ROSE ASSOCIATES" style="display:block;max-height:40px;width:auto;border:0;" />
+        </td></tr>
+        <tr><td style="height:2px;background:#D3131F;font-size:0;line-height:0;">&nbsp;</td></tr>
+        <tr><td style="padding:34px 32px 28px;">
+          <h1 style="font-size:24px;font-weight:800;color:#111827;margin:0 0 16px;">Reset your password</h1>
+          <p style="font-size:15px;color:#374151;margin:0 0 14px;">Dear ${firstName},</p>
+          <p style="font-size:14px;line-height:1.6;color:#4b5563;margin:0 0 20px;">
+            We received a request to reset the password for your Rose Associates portal account.
+            Use the secure link below to choose a new password. If you did not request this, you can ignore this email.
+          </p>
+          <table cellpadding="0" cellspacing="0" style="margin:0 0 16px;"><tr>
+            <td style="border-radius:8px;background:#B5111B;">
+              <a href="${url}" style="display:inline-block;padding:12px 22px;font-size:13px;font-weight:700;color:#ffffff;text-decoration:none;">Reset password</a>
+            </td>
+          </tr></table>
+          <p style="font-size:11px;line-height:1.5;color:#94a3b8;margin:0 0 18px;">This link expires in 7 days. If it expires, ask your Rose Associates administrator to send a new set-password email.</p>
+          <p style="font-size:14px;color:#4b5563;margin:0 0 4px;">Best regards,</p>
+          <p style="font-size:14px;font-weight:700;color:#111827;margin:0;">Rose Associates Team</p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`.trim();
+}
+
+/**
  * Existing account — remind them to log in (no new registration).
  */
 export function buildAlreadyRegisteredLoginTemplate(

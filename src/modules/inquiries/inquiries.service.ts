@@ -17,8 +17,14 @@ import { User } from '../users/entities/user.entity';
 import { EmailService } from '../../integrations/email/email.service';
 import { PricingBrochureService } from './pricing-brochure.service';
 import { PasswordService } from '../auth/services/password.service';
+import { AuthService } from '../auth/auth.service';
 import { getErrorMessage, getErrorStack } from '../../common/errors';
 import { getFrontendBaseUrl } from '../../common/frontend-url';
+import {
+  getAdminInquiryEmail,
+  getMailFrom,
+  getPortalMailFrom,
+} from '../../common/mail-config';
 import {
   buildAdminInquiryNotificationTemplate,
   buildCustomerAcknowledgementTemplate,
@@ -44,6 +50,7 @@ export class InquiriesService {
     private readonly emailService: EmailService,
     private readonly pricingBrochureService: PricingBrochureService,
     private readonly passwordService: PasswordService,
+    private readonly authService: AuthService,
   ) { }
 
   async createInquiry(dto: CreateInquiryDto): Promise<{ success: boolean; message: string; id: string }> {
@@ -248,6 +255,37 @@ export class InquiriesService {
     };
   }
 
+  /**
+   * Super-admin: send set-password email for the inquiry's linked/existing account
+   * (pending invite or active reset). Use Send portal access first if no user exists.
+   */
+  async sendSetPassword(inquiryId: string) {
+    const inquiry = await this.inquiryModel.findByPk(inquiryId);
+    if (!inquiry) throw new NotFoundException('Inquiry not found');
+    if (!GOV_ROLES.has(inquiry.leadRole)) {
+      throw new ForbiddenException('Set-password email is only for County / City leads.');
+    }
+
+    const email = inquiry.businessEmail.trim().toLowerCase();
+    const user =
+      (inquiry.userId ? await this.userModel.findByPk(inquiry.userId) : null) ||
+      (await this.userModel.findOne({ where: { email } }));
+
+    if (!user) {
+      throw new BadRequestException('No account exists for this email. Use Send portal access first.');
+    }
+
+    const result = await this.authService.adminSendSetPasswordEmail(user.id);
+    if (user.status === 'pending' || inquiry.status === 'pending') {
+      await inquiry.update({
+        status: 'invited',
+        userId: user.id,
+        invitedAt: inquiry.invitedAt || new Date(),
+      });
+    }
+    return result;
+  }
+
   async resendLogin(inquiryId: string) {
     const inquiry = await this.inquiryModel.findByPk(inquiryId);
     if (!inquiry) throw new NotFoundException('Inquiry not found');
@@ -292,22 +330,21 @@ export class InquiriesService {
   }
 
   private mailExtras() {
-    const adminEmail = this.configService.get<string>('ADMIN_INQUIRY_EMAIL', 'info@roseassociates.com');
+    const adminEmail = getAdminInquiryEmail(this.configService);
     const configuredLogoUrl = this.configService.get<string>('APP_LOGO_URL');
     const localLogoPath = path.resolve(process.cwd(), 'assets', 'logo.png');
     const hasLocalLogo = fs.existsSync(localLogoPath);
     const logoUrl = configuredLogoUrl || (hasLocalLogo ? 'cid:roselogo' : '/logo.png');
     const attachments = !configuredLogoUrl && hasLocalLogo ? [{ filename: 'logo.png', path: localLogoPath, cid: 'roselogo' }] : [];
-    const smtpUser = this.configService.get<string>('SMTP_USER', 'info@roseassociates.com');
-    const customerFrom = this.configService.get<string>('MAIL_FROM') || `"Rose Associates Southeast" <${smtpUser}>`;
+    const customerFrom = getMailFrom(this.configService);
     return { logoUrl, attachments, customerFrom, adminEmail };
   }
 
   private async dispatchEmails(dto: CreateInquiryDto, inquiryId: string): Promise<void> {
-    const adminEmail = this.configService.get<string>('ADMIN_INQUIRY_EMAIL', 'info@roseassociates.com');
+    const adminEmail = getAdminInquiryEmail(this.configService);
     const { logoUrl, attachments, customerFrom } = this.mailExtras();
-    const smtpUser = this.configService.get<string>('SMTP_USER', 'info@roseassociates.com');
-    const adminFrom = this.configService.get<string>('MAIL_FROM_PORTAL') || `"Rose Associates Portal" <${smtpUser}>`;
+    // From info@ → To Kathleen (ADMIN_INQUIRY_EMAIL)
+    const adminFrom = getPortalMailFrom(this.configService);
 
     const emailData: InquiryEmailData = {
       firstName: dto.firstName,

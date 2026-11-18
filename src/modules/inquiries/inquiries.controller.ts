@@ -86,4 +86,14 @@ export class InquiriesController {
   async resendLogin(@Param('id', ParseUUIDPipe) id: string) {
     return this.inquiriesService.resendLogin(id);
   }
+
+  @Post(':id/send-set-password')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('super_admin')
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Email set-password link for the inquiry account (pending or active)' })
+  async sendSetPassword(@Param('id', ParseUUIDPipe) id: string) {
+    return this.inquiriesService.sendSetPassword(id);
+  }
 }
