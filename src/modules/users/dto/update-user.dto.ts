@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEmail, IsEnum, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsEmail, IsEnum, IsOptional, IsString, Matches, MinLength } from 'class-validator';
 import { SubscriptionStatus, UserRole, UserStatus } from '../entities/user.entity';
 
 export class UpdateUserDto {
@@ -17,6 +17,7 @@ export class UpdateUserDto {
   @IsString()
   @IsOptional()
   @MinLength(6)
+  @Matches(/^\S+$/, { message: 'Password cannot contain spaces' })
   password?: string;
 
   @ApiPropertyOptional({ enum: ['super_admin', 'project_lead', 'assessment_specialist', 'customer'] })

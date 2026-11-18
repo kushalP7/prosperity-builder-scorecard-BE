@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsString, MinLength } from 'class-validator';
+import { IsNotEmpty, IsString, Matches, MinLength } from 'class-validator';
 
 export class SetPasswordDto {
   @ApiProperty({ description: 'Invite token from email link' })
@@ -11,5 +11,6 @@ export class SetPasswordDto {
   @IsString()
   @IsNotEmpty()
   @MinLength(6)
+  @Matches(/^\S+$/, { message: 'Password cannot contain spaces' })
   password: string;
 }

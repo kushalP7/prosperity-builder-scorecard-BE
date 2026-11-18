@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsEmail, IsNotEmpty, IsString, MinLength } from 'class-validator';
+import { IsEmail, IsNotEmpty, IsString, Matches, MinLength } from 'class-validator';
 
 export class LoginDto {
   @ApiProperty({ example: 'admin@roseassociates.com' })
@@ -11,5 +11,6 @@ export class LoginDto {
   @IsString()
   @IsNotEmpty()
   @MinLength(6, { message: 'Password must be at least 6 characters' })
+  @Matches(/^\S+$/, { message: 'Password cannot contain spaces' })
   password: string;
 }

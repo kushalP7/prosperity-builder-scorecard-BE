@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEmail, IsEnum, IsNotEmpty, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsEmail, IsEnum, IsNotEmpty, IsOptional, IsString, Matches, MinLength } from 'class-validator';
 import { SubscriptionStatus, UserRole, UserStatus } from '../entities/user.entity';
 
 export class CreateUserDto {
@@ -17,6 +17,7 @@ export class CreateUserDto {
   @IsString()
   @IsNotEmpty()
   @MinLength(6)
+  @Matches(/^\S+$/, { message: 'Password cannot contain spaces' })
   password: string;
 
   @ApiPropertyOptional({
